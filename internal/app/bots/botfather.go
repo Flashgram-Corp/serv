@@ -58,7 +58,7 @@ const (
 // 在清单里显式标注未支持——帮助文案不承诺做不到的事；本服多出来的 Telegram Login
 // 命令单列一节，避免和官方条目混在一起。
 func botFatherHelpText() string {
-	return `I can help you create and manage ` + branding.ProductName() + ` bots. If you're new to the Bot API, please see the manual (https://core.telegram.org/bots).
+	return `I can help you create and manage ` + branding.ProductName() + ` bots.
 
 You can control me by sending these commands:
 
@@ -76,11 +76,11 @@ Edit Bots
 Bot Settings
 /token - get authorization token
 /revoke - revoke bot access token
-/setinline - toggle inline mode (https://core.telegram.org/bots/inline)
-/setinlinegeo - toggle inline location requests (https://core.telegram.org/bots/inline#location-based-results)
-/setinlinefeedback - change inline feedback (https://core.telegram.org/bots/inline#collecting-feedback) settings
+/setinline - toggle inline mode
+/setinlinegeo - toggle inline location requests
+/setinlinefeedback - change inline feedback settings
 /setjoingroups - can your bot be added to groups?
-/setprivacy - toggle privacy mode (https://core.telegram.org/bots/features#privacy-mode) in groups
+/setprivacy - toggle privacy mode in groups
 
 Telegram Login
 /setlogin - configure Telegram Login for a bot
