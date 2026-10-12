@@ -549,6 +549,10 @@ func applyAccountFreezeProjection(user domain.User, viewerUserID int64, freeze d
 		tombstone.FrozenForViewer = true
 		return tombstone
 	}
+	if freeze.Frozen {
+		user.Status = domain.UserStatus{Kind: domain.UserStatusEmpty}
+		user.LastSeenAt = 0
+	}
 	user.RestrictionReasons = nil
 	return user
 }

@@ -10,7 +10,7 @@ import (
 // tgSelfUser 把 domain.User 转为 self 标记的 tg.User（optional 字段由 Encode 自动 SetFlags）。
 func tgSelfUser(u domain.User) *tg.User {
 	u = officialSystemUserPresentation(u)
-	if u.Deleted {
+	if u.Deleted || u.FrozenForViewer {
 		return tgDeletedUser(u)
 	}
 	out := &tg.User{
@@ -44,7 +44,7 @@ func tgSelfUser(u domain.User) *tg.User {
 
 func tgUser(u domain.User) *tg.User {
 	u = officialSystemUserPresentation(u)
-	if u.Deleted {
+	if u.Deleted || u.FrozenForViewer {
 		return tgDeletedUser(u)
 	}
 	out := &tg.User{
@@ -209,6 +209,10 @@ func tgUserPeerColor(color domain.PeerColor) tg.PeerColorClass {
 //     （客户端显示 "bot" 而非 last seen）。
 //   - 普通用户：照常输出 presence status。
 func applyTgUserBotFields(out *tg.User, u domain.User) {
+	if u.Deleted || u.FrozenForViewer {
+		out.Status = &tg.UserStatusEmpty{}
+		return
+	}
 	if !u.Bot {
 		out.Status = tgUserStatus(u.Status)
 		return

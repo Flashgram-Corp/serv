@@ -85,9 +85,15 @@ func (r *Router) dispatchAccountFreezeNotification(ctx context.Context, svc Acco
 	}
 	pushCtx, pushCancel := context.WithTimeout(ctx, 10*time.Second)
 	r.pushUserUpdates(pushCtx, notification.TargetUserID, &tg.Updates{
-		Updates: []tg.UpdateClass{&tg.UpdateUser{UserID: notification.FrozenUserID}},
-		Users:   r.tgUsersForViewer(notification.TargetUserID, []domain.User{user}),
-		Date:    int(r.clock.Now().Unix()),
+		Updates: []tg.UpdateClass{
+			&tg.UpdateUser{UserID: notification.FrozenUserID},
+			&tg.UpdateUserStatus{
+				UserID: notification.FrozenUserID,
+				Status: &tg.UserStatusEmpty{},
+			},
+		},
+		Users: r.tgUsersForViewer(notification.TargetUserID, []domain.User{user}),
+		Date:  int(r.clock.Now().Unix()),
 	})
 	pushCancel()
 

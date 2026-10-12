@@ -106,8 +106,8 @@ func TestFrozenPresenceNotifyDropsTrackerAndBroadcastsOffline(t *testing.T) {
 	if _, ok := update.Status.(*tg.UserStatusOnline); ok {
 		t.Fatalf("freeze broadcast pushed online: %+v", update)
 	}
-	if _, ok := update.Status.(*tg.UserStatusOffline); !ok {
-		t.Fatalf("freeze broadcast status = %T, want offline", update.Status)
+	if _, ok := update.Status.(*tg.UserStatusEmpty); !ok {
+		t.Fatalf("freeze broadcast status = %T, want empty", update.Status)
 	}
 }
 

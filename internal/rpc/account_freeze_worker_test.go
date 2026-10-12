@@ -41,11 +41,16 @@ func TestAccountFreezeNotificationPushesCurrentViewerProjection(t *testing.T) {
 		t.Fatalf("pushed user IDs = %v, want [%d]", got, viewerID)
 	}
 	updates, ok := sessions.lastUserPush().(*tg.Updates)
-	if !ok || len(updates.Updates) != 1 || len(updates.Users) != 1 {
-		t.Fatalf("push = %#v, want updateUser plus projected user", sessions.lastUserPush())
+	if !ok || len(updates.Updates) != 2 || len(updates.Users) != 1 {
+		t.Fatalf("push = %#v, want updateUser, updateUserStatus plus projected user", sessions.lastUserPush())
 	}
 	if update, ok := updates.Updates[0].(*tg.UpdateUser); !ok || update.UserID != frozenID {
 		t.Fatalf("update = %#v, want updateUser(%d)", updates.Updates[0], frozenID)
+	}
+	if statusUpdate, ok := updates.Updates[1].(*tg.UpdateUserStatus); !ok || statusUpdate.UserID != frozenID {
+		t.Fatalf("status update = %#v, want updateUserStatus(%d)", updates.Updates[1], frozenID)
+	} else if _, empty := statusUpdate.Status.(*tg.UserStatusEmpty); !empty {
+		t.Fatalf("status = %#v, want userStatusEmpty", statusUpdate.Status)
 	}
 	projected, ok := updates.Users[0].(*tg.User)
 	if !ok || !projected.Deleted {

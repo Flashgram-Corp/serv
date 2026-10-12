@@ -282,8 +282,19 @@ func (r *Router) isFrozenPresenceUser(userID int64) bool {
 	if r == nil || userID == 0 {
 		return false
 	}
-	_, frozen := r.frozenPresence.Load(userID)
-	return frozen
+	if _, frozen := r.frozenPresence.Load(userID); frozen {
+		return true
+	}
+	if r.deps.AccountFreeze != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		freeze, found, err := r.deps.AccountFreeze.AccountFreeze(ctx, userID)
+		if err == nil && found && freeze.Frozen {
+			r.frozenPresence.Store(userID, struct{}{})
+			return true
+		}
+	}
+	return false
 }
 
 // seedFrozenPresence backfills the freeze presence mask from the durable
@@ -324,9 +335,9 @@ func (r *Router) applyFrozenPresence(userID int64, frozen bool) {
 	}
 }
 
-// announceFrozenOffline immediately broadcasts an offline status for the frozen
+// announceFrozenOffline immediately broadcasts an empty status for the frozen
 // account to its own sessions and relevant peers, so previously rendered online
-// states are replaced rather than waiting for the next read.
+// states are cleared rather than waiting for the next read.
 func (r *Router) announceFrozenOffline(userID int64) {
 	if r == nil || userID == 0 {
 		return
@@ -334,7 +345,7 @@ func (r *Router) announceFrozenOffline(userID int64) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	r.pushUserStatus(ctx, userID,
-		domain.UserStatus{Kind: domain.UserStatusOffline, WasOnline: int(r.clock.Now().Unix())})
+		domain.UserStatus{Kind: domain.UserStatusEmpty})
 }
 
 func (r *Router) setPresenceFromContext(ctx context.Context, userID int64, offline bool, persistMode presencePersistMode) (domain.UserStatus, bool) {
@@ -452,11 +463,11 @@ func (r *Router) userPresenceStatusForUser(u domain.User) domain.UserStatus {
 	if userID == 0 {
 		return domain.UserStatus{Kind: domain.UserStatusRecently}
 	}
-	// A tombstone never has presence. Without this guard a deleted peer that
-	// reaches presence before the projection collapsed its status would fall
-	// through to the tracker/last-seen branches and render "last seen recently"
+	// A tombstone or frozen account never has presence. Without this guard a deleted
+	// or frozen peer that reaches presence before the projection collapsed its status
+	// would fall through to the tracker/last-seen branches and render "last seen recently"
 	// right next to its own deleted presentation.
-	if u.Deleted {
+	if u.Deleted || u.FrozenForViewer || r.isFrozenPresenceUser(userID) {
 		return domain.UserStatus{Kind: domain.UserStatusEmpty}
 	}
 	// The app projector marks a privacy-hidden exact timestamp with a coarse
@@ -469,13 +480,6 @@ func (r *Router) userPresenceStatusForUser(u domain.User) domain.UserStatus {
 		domain.UserStatusLastMonth,
 		domain.UserStatusEmpty:
 		return u.Status
-	}
-	// 冻结账号不向任何对端渲染在线/精确 last_seen，也不回落为 Recently：统一采用
-	// deleted 墓碑的 Empty 呈现（客户端显示「很久以前」）。否则冻结前的 LastSeenAt
-	// 会沿 userPresenceStatusForUser 透出「几分钟前/最近在线」，与数秒后 tombstone
-	// invalidation 落地的 Empty 打架，形成短暂的最近在线闪烁。
-	if r.isFrozenPresenceUser(userID) {
-		return domain.UserStatus{Kind: domain.UserStatusEmpty}
 	}
 	now := int(r.clock.Now().Unix())
 	if status, ok := r.presence.statusFor(userID, now); ok {
@@ -675,7 +679,7 @@ func (r *Router) announceUserOfflineIfStillGone(rawAuthKeyID [8]byte, sessionID,
 	// right behind it. Announcing "last seen <now>" here would immediately undo
 	// the empty presence the tombstone just installed -- the account would pop
 	// back as recently offline seconds after appearing deleted.
-	if r.isDeletedAccount(userID) {
+	if r.isDeletedAccount(userID) || r.isFrozenPresenceUser(userID) {
 		return
 	}
 	status := domain.UserStatus{Kind: domain.UserStatusOffline, WasOnline: disconnectedAt}
@@ -907,6 +911,9 @@ func (r *Router) pushUserStatus(ctx context.Context, userID int64, status domain
 	if userID == 0 {
 		return
 	}
+	if status.Kind != domain.UserStatusEmpty && (r.isDeletedAccount(userID) || r.isFrozenPresenceUser(userID)) {
+		status = domain.UserStatus{Kind: domain.UserStatusEmpty}
+	}
 	update := &tg.Updates{
 		Updates: []tg.UpdateClass{&tg.UpdateUserStatus{
 			UserID: userID,
@@ -1032,6 +1039,9 @@ func (r *Router) statusTimestampVisibleToViewers(ctx context.Context, ownerUserI
 // online accounts after StatusTimestamp changes. Allowed viewers receive the
 // live value; denied viewers receive only a coarse bucket.
 func (r *Router) pushStatusPrivacyRefresh(ctx context.Context, ownerUserID int64) {
+	if r.isDeletedAccount(ownerUserID) || r.isFrozenPresenceUser(ownerUserID) {
+		return
+	}
 	recipients := r.onlineRelevantPeerIDs(ctx, ownerUserID)
 	visible := r.statusTimestampVisibleToViewers(ctx, ownerUserID, recipients)
 	exact := r.userPresenceStatus(ownerUserID)
