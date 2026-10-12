@@ -56,7 +56,7 @@ func (r *Router) NotifyAccountFreezeChanged(_ context.Context, freeze domain.Acc
 	}
 	r.applyFrozenPresence(freeze.UserID, freeze.Frozen)
 	if freeze.Frozen {
-		r.announceFrozenOffline(freeze.UserID)
+		r.announceFrozenEmptyStatus(freeze.UserID)
 	}
 	if r.deps.UserProjectionFacts != nil {
 		r.deps.UserProjectionFacts.InvalidateAccountFreezeFact(freeze.UserID)

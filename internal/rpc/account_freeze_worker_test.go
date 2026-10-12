@@ -41,11 +41,16 @@ func TestAccountFreezeNotificationPushesCurrentViewerProjection(t *testing.T) {
 		t.Fatalf("pushed user IDs = %v, want [%d]", got, viewerID)
 	}
 	updates, ok := sessions.lastUserPush().(*tg.Updates)
-	if !ok || len(updates.Updates) != 1 || len(updates.Users) != 1 {
-		t.Fatalf("push = %#v, want updateUser plus projected user", sessions.lastUserPush())
+	if !ok || len(updates.Updates) != 2 || len(updates.Users) != 1 {
+		t.Fatalf("push = %#v, want updateUser, updateUserStatus plus projected user", sessions.lastUserPush())
 	}
 	if update, ok := updates.Updates[0].(*tg.UpdateUser); !ok || update.UserID != frozenID {
 		t.Fatalf("update = %#v, want updateUser(%d)", updates.Updates[0], frozenID)
+	}
+	if statusUpdate, ok := updates.Updates[1].(*tg.UpdateUserStatus); !ok || statusUpdate.UserID != frozenID {
+		t.Fatalf("status update = %#v, want updateUserStatus(%d)", updates.Updates[1], frozenID)
+	} else if _, empty := statusUpdate.Status.(*tg.UserStatusEmpty); !empty {
+		t.Fatalf("status = %#v, want userStatusEmpty", statusUpdate.Status)
 	}
 	projected, ok := updates.Users[0].(*tg.User)
 	if !ok || !projected.Deleted {
@@ -99,6 +104,46 @@ func TestAccountFreezeNotificationLoadsCurrentStateAndRetriesLoadFailure(t *test
 	}
 	if len(freezeSvc.completed) != 1 || freezeSvc.completed[0] != [2]int64{8, 5} {
 		t.Fatalf("completed = %v, want [[8 5]]", freezeSvc.completed)
+	}
+}
+
+func TestAccountFreezeNotificationUnfreezeDoesNotPushUserStatusEmpty(t *testing.T) {
+	const (
+		viewerID   = int64(3001)
+		unfrozenID = int64(3002)
+	)
+	sessions := &captureSessions{}
+	freezeSvc := &freezeWorkerService{}
+	activeUser := domain.User{
+		ID:        unfrozenID,
+		FirstName: "Active",
+		Status:    domain.UserStatus{Kind: domain.UserStatusRecently},
+	}
+	users := &freezeWorkerUsers{user: activeUser}
+	r := New(Config{}, Deps{
+		AccountFreezeNotifications: freezeSvc,
+		Users:                      users,
+		Sessions:                   sessions,
+	}, zaptest.NewLogger(t), clock.System)
+
+	r.dispatchAccountFreezeNotification(context.Background(), freezeSvc, domain.AccountFreezeNotification{
+		ID: 9, TargetUserID: viewerID, FrozenUserID: unfrozenID, Version: 6, Frozen: false,
+	})
+
+	if len(freezeSvc.completed) != 1 || freezeSvc.completed[0] != [2]int64{9, 6} {
+		t.Fatalf("completed = %v, want [[9 6]]", freezeSvc.completed)
+	}
+	updates, ok := sessions.lastUserPush().(*tg.Updates)
+	if !ok || len(updates.Updates) != 1 {
+		t.Fatalf("push = %#v, want only updateUser on unfreeze", sessions.lastUserPush())
+	}
+	if update, ok := updates.Updates[0].(*tg.UpdateUser); !ok || update.UserID != unfrozenID {
+		t.Fatalf("update = %#v, want updateUser(%d)", updates.Updates[0], unfrozenID)
+	}
+	for _, u := range updates.Updates {
+		if _, isStatus := u.(*tg.UpdateUserStatus); isStatus {
+			t.Fatalf("unfreeze pushed updateUserStatus, want none: %#v", u)
+		}
 	}
 }
 

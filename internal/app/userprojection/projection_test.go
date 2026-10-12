@@ -273,8 +273,10 @@ func TestProjectorAccountFreezeIsViewerScopedAndReversible(t *testing.T) {
 	}}
 	projector := New(WithAccountFreezeProvider(freezes))
 	base := []domain.User{{
-		ID:        frozenUserID,
-		FirstName: "Frozen",
+		ID:         frozenUserID,
+		FirstName:  "Frozen",
+		Status:     domain.UserStatus{Kind: domain.UserStatusOnline, Expires: 1700000100},
+		LastSeenAt: 1700000000,
 		// Viewer-scoped fields must never be trusted from a reused base object.
 		RestrictionReasons: []domain.UserRestrictionReason{{Platform: "all", Reason: "stale", Text: "stale"}},
 	}}
@@ -301,8 +303,8 @@ func TestProjectorAccountFreezeIsViewerScopedAndReversible(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ForViewer(self): %v", err)
 	}
-	if self := projectionUser(t, selfView, frozenUserID); self.Deleted || self.FrozenForViewer || self.FirstName != "Frozen" || len(self.RestrictionReasons) != 0 {
-		t.Fatalf("self-view = %+v, want live account without restriction", self)
+	if self := projectionUser(t, selfView, frozenUserID); self.Deleted || self.FrozenForViewer || self.FirstName != "Frozen" || len(self.RestrictionReasons) != 0 || self.Status.Kind != domain.UserStatusEmpty || self.LastSeenAt != 0 {
+		t.Fatalf("self-view = %+v, want live account with empty status and cleared last_seen", self)
 	}
 
 	batch, err := projector.ForViewers(ctx, []int64{otherViewer, frozenUserID}, base)
@@ -312,8 +314,8 @@ func TestProjectorAccountFreezeIsViewerScopedAndReversible(t *testing.T) {
 	if peer := projectionUser(t, batch[otherViewer], frozenUserID); !peer.Deleted || !peer.FrozenForViewer || len(peer.RestrictionReasons) != 0 {
 		t.Fatalf("batch other-view = %+v, want deleted tombstone with frozen mark", peer)
 	}
-	if self := projectionUser(t, batch[frozenUserID], frozenUserID); self.Deleted || self.FrozenForViewer || self.FirstName != "Frozen" || len(self.RestrictionReasons) != 0 {
-		t.Fatalf("batch self-view = %+v, want live account", self)
+	if self := projectionUser(t, batch[frozenUserID], frozenUserID); self.Deleted || self.FrozenForViewer || self.FirstName != "Frozen" || len(self.RestrictionReasons) != 0 || self.Status.Kind != domain.UserStatusEmpty || self.LastSeenAt != 0 {
+		t.Fatalf("batch self-view = %+v, want live account with empty status", self)
 	}
 
 	freezes.items = nil
@@ -321,8 +323,8 @@ func TestProjectorAccountFreezeIsViewerScopedAndReversible(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ForViewer(after unfreeze): %v", err)
 	}
-	if unfrozen := projectionUser(t, unfrozenView, frozenUserID); unfrozen.Deleted || unfrozen.FrozenForViewer || unfrozen.FirstName != "Frozen" || len(unfrozen.RestrictionReasons) != 0 {
-		t.Fatalf("unfrozen projection = %+v, want live account", unfrozen)
+	if unfrozen := projectionUser(t, unfrozenView, frozenUserID); unfrozen.Deleted || unfrozen.FrozenForViewer || unfrozen.FirstName != "Frozen" || len(unfrozen.RestrictionReasons) != 0 || unfrozen.Status.Kind != domain.UserStatusOnline || unfrozen.LastSeenAt != 1700000000 {
+		t.Fatalf("unfrozen projection = %+v, want live account with restored status", unfrozen)
 	}
 }
 
