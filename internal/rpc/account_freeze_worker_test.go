@@ -107,6 +107,46 @@ func TestAccountFreezeNotificationLoadsCurrentStateAndRetriesLoadFailure(t *test
 	}
 }
 
+func TestAccountFreezeNotificationUnfreezeDoesNotPushUserStatusEmpty(t *testing.T) {
+	const (
+		viewerID   = int64(3001)
+		unfrozenID = int64(3002)
+	)
+	sessions := &captureSessions{}
+	freezeSvc := &freezeWorkerService{}
+	activeUser := domain.User{
+		ID:        unfrozenID,
+		FirstName: "Active",
+		Status:    domain.UserStatus{Kind: domain.UserStatusRecently},
+	}
+	users := &freezeWorkerUsers{user: activeUser}
+	r := New(Config{}, Deps{
+		AccountFreezeNotifications: freezeSvc,
+		Users:                      users,
+		Sessions:                   sessions,
+	}, zaptest.NewLogger(t), clock.System)
+
+	r.dispatchAccountFreezeNotification(context.Background(), freezeSvc, domain.AccountFreezeNotification{
+		ID: 9, TargetUserID: viewerID, FrozenUserID: unfrozenID, Version: 6, Frozen: false,
+	})
+
+	if len(freezeSvc.completed) != 1 || freezeSvc.completed[0] != [2]int64{9, 6} {
+		t.Fatalf("completed = %v, want [[9 6]]", freezeSvc.completed)
+	}
+	updates, ok := sessions.lastUserPush().(*tg.Updates)
+	if !ok || len(updates.Updates) != 1 {
+		t.Fatalf("push = %#v, want only updateUser on unfreeze", sessions.lastUserPush())
+	}
+	if update, ok := updates.Updates[0].(*tg.UpdateUser); !ok || update.UserID != unfrozenID {
+		t.Fatalf("update = %#v, want updateUser(%d)", updates.Updates[0], unfrozenID)
+	}
+	for _, u := range updates.Updates {
+		if _, isStatus := u.(*tg.UpdateUserStatus); isStatus {
+			t.Fatalf("unfreeze pushed updateUserStatus, want none: %#v", u)
+		}
+	}
+}
+
 type freezeWorkerService struct {
 	completed [][2]int64
 }

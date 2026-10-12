@@ -260,8 +260,6 @@ func normalizePresenceStatus(status domain.UserStatus, now int) domain.UserStatu
 	return status
 }
 
-// isFrozenPresenceUser reports whether userID is under an account freeze and
-// must never render/broadcast online. Pure in-process mask check, O(1).
 // isDeletedAccount reports whether the peer is an account tombstone. Deletion
 // keeps every row for history, so this is an authoritative row read rather than
 // an in-process mask like the frozen one.
@@ -278,23 +276,14 @@ func (r *Router) isDeletedAccount(userID int64) bool {
 	return u.Deleted
 }
 
+// isFrozenPresenceUser reports whether userID is under an account freeze and
+// must never render/broadcast online. Pure in-process mask check, O(1).
 func (r *Router) isFrozenPresenceUser(userID int64) bool {
 	if r == nil || userID == 0 {
 		return false
 	}
-	if _, frozen := r.frozenPresence.Load(userID); frozen {
-		return true
-	}
-	if r.deps.AccountFreeze != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		freeze, found, err := r.deps.AccountFreeze.AccountFreeze(ctx, userID)
-		if err == nil && found && freeze.Frozen {
-			r.frozenPresence.Store(userID, struct{}{})
-			return true
-		}
-	}
-	return false
+	_, frozen := r.frozenPresence.Load(userID)
+	return frozen
 }
 
 // seedFrozenPresence backfills the freeze presence mask from the durable
@@ -335,10 +324,10 @@ func (r *Router) applyFrozenPresence(userID int64, frozen bool) {
 	}
 }
 
-// announceFrozenOffline immediately broadcasts an empty status for the frozen
+// announceFrozenEmptyStatus immediately broadcasts an empty status for the frozen
 // account to its own sessions and relevant peers, so previously rendered online
 // states are cleared rather than waiting for the next read.
-func (r *Router) announceFrozenOffline(userID int64) {
+func (r *Router) announceFrozenEmptyStatus(userID int64) {
 	if r == nil || userID == 0 {
 		return
 	}
@@ -467,7 +456,7 @@ func (r *Router) userPresenceStatusForUser(u domain.User) domain.UserStatus {
 	// or frozen peer that reaches presence before the projection collapsed its status
 	// would fall through to the tracker/last-seen branches and render "last seen recently"
 	// right next to its own deleted presentation.
-	if u.Deleted || u.FrozenForViewer || r.isFrozenPresenceUser(userID) {
+	if u.Deleted || r.isFrozenPresenceUser(userID) {
 		return domain.UserStatus{Kind: domain.UserStatusEmpty}
 	}
 	// The app projector marks a privacy-hidden exact timestamp with a coarse
@@ -911,7 +900,7 @@ func (r *Router) pushUserStatus(ctx context.Context, userID int64, status domain
 	if userID == 0 {
 		return
 	}
-	if status.Kind != domain.UserStatusEmpty && (r.isDeletedAccount(userID) || r.isFrozenPresenceUser(userID)) {
+	if status.Kind != domain.UserStatusEmpty && r.isFrozenPresenceUser(userID) {
 		status = domain.UserStatus{Kind: domain.UserStatusEmpty}
 	}
 	update := &tg.Updates{

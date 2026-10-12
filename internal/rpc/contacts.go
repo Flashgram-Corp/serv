@@ -400,9 +400,11 @@ func (r *Router) onContactsGetStatuses(ctx context.Context) ([]tg.ContactStatus,
 		seen[id] = struct{}{}
 		u := contact.User
 		if current, ok := usersByID[id]; ok {
-			u = current
+			u.Deleted = current.Deleted
+			u.LastSeenAt = current.LastSeenAt
+			u.Status = current.Status
 		}
-		if u.Deleted || u.FrozenForViewer || r.isFrozenPresenceUser(id) {
+		if u.Deleted || r.isFrozenPresenceUser(id) {
 			out = append(out, tg.ContactStatus{
 				UserID: id,
 				Status: &tg.UserStatusEmpty{},

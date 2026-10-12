@@ -34,20 +34,6 @@ func (p *frozenGateFreezeProvider) AccountFreeze(_ context.Context, userID int64
 	return p.freeze, p.found, p.err
 }
 
-func (p *frozenGateFreezeProvider) AccountFreezes(_ context.Context, userIDs []int64) (map[int64]domain.AccountFreeze, error) {
-	out := make(map[int64]domain.AccountFreeze, len(userIDs))
-	for _, id := range userIDs {
-		if p.items != nil {
-			if freeze, found := p.items[id]; found && freeze.Frozen {
-				out[id] = freeze
-			}
-		} else if p.found && p.freeze.Frozen && p.freeze.UserID == id {
-			out[id] = p.freeze
-		}
-	}
-	return out, p.err
-}
-
 type frozenGateChannels struct {
 	ChannelsService
 	views map[int64]domain.ChannelView

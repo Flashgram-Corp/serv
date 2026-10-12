@@ -1239,6 +1239,7 @@ func TestContactsGetStatusesSuppressesDeletedAndFrozenUsers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create deleted: %v", err)
 	}
+	// Active in user store, but flagged in the in-process frozenPresence mask:
 	frozen, err := userStore.Create(ctx, domain.User{AccessHash: 33, Phone: "1003", FirstName: "Frozen", LastSeenAt: 1700000000})
 	if err != nil {
 		t.Fatalf("create frozen: %v", err)
@@ -1247,22 +1248,20 @@ func TestContactsGetStatusesSuppressesDeletedAndFrozenUsers(t *testing.T) {
 	contacts := memory.NewContactStore()
 	if err := contacts.SaveList(ctx, alice.ID, domain.ContactList{
 		Contacts: []domain.Contact{
-			{User: domain.User{ID: deleted.ID, FirstName: "Deleted", Contact: true}},
-			{User: domain.User{ID: frozen.ID, FirstName: "Frozen", Contact: true}},
+			{User: domain.User{ID: deleted.ID, FirstName: "Deleted", Contact: true, LastSeenAt: 1700000000}},
+			{User: domain.User{ID: frozen.ID, FirstName: "Frozen", Contact: true, LastSeenAt: 1700000000}},
 		},
 	}); err != nil {
 		t.Fatalf("save contacts: %v", err)
 	}
 
-	freezeProvider := &frozenGateFreezeProvider{items: map[int64]domain.AccountFreeze{
-		frozen.ID: frozenGateActiveState(frozen.ID),
-	}}
-
 	r := New(Config{}, Deps{
-		Contacts:      appcontacts.NewService(contacts, userStore),
-		Users:         appusers.NewService(userStore, appusers.WithAccountFreezeProvider(freezeProvider)),
-		AccountFreeze: freezeProvider,
+		Contacts: appcontacts.NewService(contacts, userStore),
+		Users:    appusers.NewService(userStore),
 	}, zaptest.NewLogger(t), clock.System)
+
+	// Populate the in-process mask for frozen user
+	r.applyFrozenPresence(frozen.ID, true)
 
 	statuses, err := r.onContactsGetStatuses(WithUserID(ctx, alice.ID))
 	if err != nil {
