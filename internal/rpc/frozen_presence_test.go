@@ -67,10 +67,10 @@ func TestFrozenPresenceUserStatusNeverOnlineFromProvider(t *testing.T) {
 	}
 }
 
-// TestFrozenPresenceNotifyDropsTrackerAndBroadcastsOffline locks the freeze
+// TestFrozenPresenceNotifyDropsTrackerAndBroadcastsEmptyStatus locks the freeze
 // transition: pending online presence entries are evicted and the relevant
-// peers receive an immediate offline updateUserStatus.
-func TestFrozenPresenceNotifyDropsTrackerAndBroadcastsOffline(t *testing.T) {
+// peers receive an immediate empty updateUserStatus.
+func TestFrozenPresenceNotifyDropsTrackerAndBroadcastsEmptyStatus(t *testing.T) {
 	userID := frozenPresenceTestUserID
 	sessions := &captureSessions{}
 	r := New(Config{}, Deps{Sessions: sessions}, zaptest.NewLogger(t), clock.System)
@@ -106,8 +106,8 @@ func TestFrozenPresenceNotifyDropsTrackerAndBroadcastsOffline(t *testing.T) {
 	if _, ok := update.Status.(*tg.UserStatusOnline); ok {
 		t.Fatalf("freeze broadcast pushed online: %+v", update)
 	}
-	if _, ok := update.Status.(*tg.UserStatusOffline); !ok {
-		t.Fatalf("freeze broadcast status = %T, want offline", update.Status)
+	if _, ok := update.Status.(*tg.UserStatusEmpty); !ok {
+		t.Fatalf("freeze broadcast status = %T, want empty", update.Status)
 	}
 }
 
@@ -198,5 +198,61 @@ func TestFrozenPresenceRenewalDoesNotRefreshLastSeen(t *testing.T) {
 	}
 	if updater.calls != 1 {
 		t.Fatalf("live renewal last-seen writes = %d, want 1", updater.calls)
+	}
+}
+
+// TestFrozenPresencePushUserStatusCoercesToEmpty locks the write invariant that
+// pushUserStatus coerces any status to UserStatusEmpty for a frozen account.
+func TestFrozenPresencePushUserStatusCoercesToEmpty(t *testing.T) {
+	userID := frozenPresenceTestUserID + 3
+	sessions := &captureSessions{}
+	r := New(Config{}, Deps{Sessions: sessions}, zaptest.NewLogger(t), clock.System)
+	r.applyFrozenPresence(userID, true)
+
+	r.pushUserStatus(context.Background(), userID, domain.UserStatus{Kind: domain.UserStatusOnline})
+	msg := sessions.lastUserPush()
+	if msg == nil {
+		t.Fatal("pushUserStatus produced no push")
+	}
+	update := pushedUserStatus(t, msg)
+	if update.UserID != userID {
+		t.Fatalf("pushed status user = %d, want %d", update.UserID, userID)
+	}
+	if _, ok := update.Status.(*tg.UserStatusEmpty); !ok {
+		t.Fatalf("pushed status = %T, want *tg.UserStatusEmpty", update.Status)
+	}
+}
+
+// TestFrozenPresenceAnnounceOfflineEarlyExit verifies that offline announcements
+// (both immediate and grace-period delayed) exit early without broadcasting offline
+// timestamps or updating last seen.
+func TestFrozenPresenceAnnounceOfflineEarlyExit(t *testing.T) {
+	userID := frozenPresenceTestUserID + 4
+	sessions := &captureSessions{}
+	updater := &captureLastSeenUpdater{}
+	r := New(Config{}, Deps{Sessions: sessions, Users: updater}, zaptest.NewLogger(t), clock.System)
+	r.applyFrozenPresence(userID, true)
+
+	// announceUserOfflineIfStillGone
+	r.announceUserOfflineIfStillGone([8]byte{1}, 10, userID, int(time.Now().Unix()))
+	if sessions.lastUserPush() != nil {
+		t.Fatalf("announceUserOfflineIfStillGone pushed for frozen user: %#v", sessions.lastUserPush())
+	}
+	if updater.calls != 0 {
+		t.Fatalf("announceUserOfflineIfStillGone updated last seen %d times, want 0", updater.calls)
+	}
+}
+
+// TestFrozenPresencePushStatusPrivacyRefreshEarlyExit verifies that privacy
+// refresh exits early for frozen users without pushing status updates.
+func TestFrozenPresencePushStatusPrivacyRefreshEarlyExit(t *testing.T) {
+	userID := frozenPresenceTestUserID + 5
+	sessions := &captureSessions{}
+	r := New(Config{}, Deps{Sessions: sessions}, zaptest.NewLogger(t), clock.System)
+	r.applyFrozenPresence(userID, true)
+
+	r.pushStatusPrivacyRefresh(context.Background(), userID)
+	if sessions.lastUserPush() != nil {
+		t.Fatalf("pushStatusPrivacyRefresh pushed for frozen user: %#v", sessions.lastUserPush())
 	}
 }
