@@ -933,6 +933,9 @@ func (s *CommunityStore) EditCommunityDefaultBannedRights(_ context.Context, use
 	})
 }
 func (s *CommunityStore) SetCommunityPhoto(_ context.Context, user, id int64, photo *domain.Photo, date int) (domain.CommunityView, bool, error) {
+	if photo != nil && (photo.ID == 0 || photo.DCID <= 0) {
+		return domain.CommunityView{}, false, domain.ErrPhotoInvalid
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.editViewLocked(user, id, domain.CommunityMember.CanChangeInfo, func(c *domain.Community) bool {
@@ -940,9 +943,6 @@ func (s *CommunityStore) SetCommunityPhoto(_ context.Context, user, id int64, ph
 		var stripped []byte
 		if photo != nil {
 			pid, dc = photo.ID, photo.DCID
-			if dc <= 0 {
-				dc = 2
-			}
 			stripped = domain.StrippedFromSizes(photo.Sizes)
 		}
 		if stripped == nil {

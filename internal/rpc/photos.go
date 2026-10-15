@@ -233,66 +233,10 @@ type profilePhotoUpload struct {
 }
 
 func parseProfilePhotoUpload(req profilePhotoUploadRequest) (profilePhotoUpload, int, error) {
-	if setter, ok := req.(interface{ SetFlags() }); ok {
-		setter.SetFlags()
-	}
 	file, hasFile := req.GetFile()
 	video, hasVideo := req.GetVideo()
 	videoStartTs, hasVideoStartTs := req.GetVideoStartTs()
 	markup, hasMarkup := req.GetVideoEmojiMarkup()
-	switch r := req.(type) {
-	case *tg.InputChatUploadedPhoto:
-		if !hasFile && r.File != nil {
-			file = r.File
-			hasFile = true
-		}
-		if !hasVideo && r.Video != nil {
-			video = r.Video
-			hasVideo = true
-		}
-		if !hasVideoStartTs && r.VideoStartTs != 0 {
-			videoStartTs = r.VideoStartTs
-			hasVideoStartTs = true
-		}
-		if !hasMarkup && r.VideoEmojiMarkup != nil {
-			markup = r.VideoEmojiMarkup
-			hasMarkup = true
-		}
-	case *tg.PhotosUploadProfilePhotoRequest:
-		if !hasFile && r.File != nil {
-			file = r.File
-			hasFile = true
-		}
-		if !hasVideo && r.Video != nil {
-			video = r.Video
-			hasVideo = true
-		}
-		if !hasVideoStartTs && r.VideoStartTs != 0 {
-			videoStartTs = r.VideoStartTs
-			hasVideoStartTs = true
-		}
-		if !hasMarkup && r.VideoEmojiMarkup != nil {
-			markup = r.VideoEmojiMarkup
-			hasMarkup = true
-		}
-	case *tg.PhotosUploadContactProfilePhotoRequest:
-		if !hasFile && r.File != nil {
-			file = r.File
-			hasFile = true
-		}
-		if !hasVideo && r.Video != nil {
-			video = r.Video
-			hasVideo = true
-		}
-		if !hasVideoStartTs && r.VideoStartTs != 0 {
-			videoStartTs = r.VideoStartTs
-			hasVideoStartTs = true
-		}
-		if !hasMarkup && r.VideoEmojiMarkup != nil {
-			markup = r.VideoEmojiMarkup
-			hasMarkup = true
-		}
-	}
 	if hasFile && file == nil {
 		return profilePhotoUpload{}, 0, photoInvalidErr()
 	}
