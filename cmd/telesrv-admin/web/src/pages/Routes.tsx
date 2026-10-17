@@ -90,7 +90,7 @@ function RouteView({ route, navigate }: { route: RouteState; navigate: Navigate 
     return <AuditLogPage />;
   }
   if (route.path === "/donations") {
-    return <DonationsPage />;
+    return <DonationsPage navigate={navigate} />;
   }
   if (route.path === "/prices") {
     return <PricesPage navigate={navigate} />;

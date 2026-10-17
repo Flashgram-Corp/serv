@@ -156,14 +156,6 @@ export function AccountDetailPage({ id, navigate }: { id: number; navigate: Navi
                 onDone={load}
               />
             )}
-            <ActionButton
-              label={t("account.deleteAccount")}
-              icon={<Trash2 size={15} />}
-              tone="danger"
-              path="/api/actions/delete-account"
-              payload={() => ({ user_id: account.ID })}
-              onDone={load}
-            />
             <label className="duration-field">
               <span>{t("account.premiumMonths")}</span>
               <input
@@ -238,6 +230,25 @@ export function AccountDetailPage({ id, navigate }: { id: number; navigate: Navi
             <UsernameAction idKey="user_id" id={account.ID} path="/api/actions/set-account-username" current={account.Username} onDone={load} />
             <ColorAction idKey="user_id" id={account.ID} path="/api/actions/set-account-color" onDone={load} />
             <EmojiStatusAction idKey="user_id" id={account.ID} path="/api/actions/set-account-emoji-status" onDone={load} />
+
+            {/* Irreversible account deletion, in its own bordered block at the
+                very bottom of the dock rather than inline among the freeze and
+                Premium controls. It was one button in a row of ~10 similarly
+                shaped buttons, which is the worst possible place for the only
+                action on this page that cannot be undone -- the reason/dry-run
+                flow is what protects it, not the button's colour. */}
+            <section className="account-danger-zone">
+              <div className="dock-title">{t("account.dangerZone")}</div>
+              <p className="muted">{t("account.deleteAccountHint")}</p>
+              <ActionButton
+                label={t("account.deleteAccount")}
+                icon={<Trash2 size={15} />}
+                tone="danger"
+                path="/api/actions/delete-account"
+                payload={() => ({ user_id: account.ID })}
+                onDone={load}
+              />
+            </section>
           </section>
         }
       />
