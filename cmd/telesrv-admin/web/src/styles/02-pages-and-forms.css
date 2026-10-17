@@ -235,6 +235,57 @@
   }
 }
 
+/* The Stars packages on the Commerce > Shop prices page. A read-only strip:
+   each package is one Telegram-Star amount and the server Stars it credits is
+   that amount times the rate, so there is nothing per-package to edit. The
+   figures recompute from the rate input as it is typed, which is the whole
+   point of showing them next to it. */
+.prices-packages {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.prices-packages-head {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.prices-packages-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.prices-package {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  background: var(--panel-soft, var(--sidebar-soft));
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.prices-package strong {
+  color: var(--heading);
+  font-size: 15px;
+}
+
+.prices-package span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.prices-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 10px;
+}
+
 @media (max-width: 760px) {
   .overview-tiles,
   .overview-tiles--tight {
