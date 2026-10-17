@@ -62,6 +62,80 @@ func (r *Router) registerWallet(d *tlprofile.Dispatcher) {
 		}
 		return &tg.ToncenterAPIResponse{Response: tg.DataJSON{Data: result}}, nil
 	})
+
+	// -- TON Connect -------------------------------------------------------
+	//
+	// TON Connect is the bridge to external wallet apps. telesrv's wallet is
+	// server-side, so it holds no TON Connect sessions and cannot serve one.
+	//
+	// Registering these is the point of the exercise, not implementing them: an
+	// unregistered method is logged as an "Unhandled RPC (compatibility trace)"
+	// warning on *every* call, and clients poll tonConnectGetSessions on a loop,
+	// so leaving them out costs hundreds of warn lines a day. Two of the nine can
+	// still answer truthfully -- there are no sessions, and therefore no events --
+	// and the rest refuse, because each of them would have to create or drive a
+	// session that cannot exist here.
+	//
+	// The gasless pair is the same story: telesrv fronts transfers itself rather
+	// than relaying them, so there is nothing to report.
+	registerRPC[*tg.WalletTonConnectGetSessionsRequest](d, tlprofile.SemanticMethodWalletTonConnectGetSessions, func(ctx context.Context, _ *tg.WalletTonConnectGetSessionsRequest) (any, error) {
+		if _, _, err := r.walletCaller(ctx, "tonconnect-sessions", 30); err != nil {
+			return nil, err
+		}
+		return &tg.WalletTonConnectSessions{Sessions: []tg.TonConnectSession{}}, nil
+	})
+	registerRPC[*tg.WalletTonConnectNextEventIDRequest](d, tlprofile.SemanticMethodWalletTonConnectNextEventID, func(ctx context.Context, _ *tg.WalletTonConnectNextEventIDRequest) (any, error) {
+		if _, _, err := r.walletCaller(ctx, "tonconnect-events", 30); err != nil {
+			return nil, err
+		}
+		// No session, so no events. The schema names a result type
+		// (TonConnectNextEventId) that this fork never defines a constructor
+		// for; the value on the wire is a bare long.
+		return int64(0), nil
+	})
+	// Gasless refuses rather than returning an empty Updates vector. An empty
+	// vector reads as "I run a gasless system and nothing is pending", which is a
+	// claim telesrv cannot back: it fronts transfers itself and no gasless relay.
+	// An explicit refusal is the answer a client can act on.
+	registerRPC[*tg.WalletGetGaslessInfoRequest](d, tlprofile.SemanticMethodWalletGetGaslessInfo, func(ctx context.Context, _ *tg.WalletGetGaslessInfoRequest) (any, error) {
+		return nil, r.walletCapabilityUnsupported(ctx, "gasless-info", 30)
+	})
+
+	// Each of these would have to create or drive a session, so each refuses.
+	registerRPC[*tg.WalletTonConnectGetPendingRequest](d, tlprofile.SemanticMethodWalletTonConnectGetPending, func(ctx context.Context, _ *tg.WalletTonConnectGetPendingRequest) (any, error) {
+		return nil, r.walletCapabilityUnsupported(ctx, "tonconnect-pending", 30)
+	})
+	registerRPC[*tg.WalletTonConnectCreateSessionRequest](d, tlprofile.SemanticMethodWalletTonConnectCreateSession, func(ctx context.Context, _ *tg.WalletTonConnectCreateSessionRequest) (any, error) {
+		return nil, r.walletCapabilityUnsupported(ctx, "tonconnect-create", 5)
+	})
+	registerRPC[*tg.WalletTonConnectRegisterKeyRequest](d, tlprofile.SemanticMethodWalletTonConnectRegisterKey, func(ctx context.Context, _ *tg.WalletTonConnectRegisterKeyRequest) (any, error) {
+		return nil, r.walletCapabilityUnsupported(ctx, "tonconnect-register", 5)
+	})
+	registerRPC[*tg.WalletTonConnectSubmitConnectResultRequest](d, tlprofile.SemanticMethodWalletTonConnectSubmitConnectResult, func(ctx context.Context, _ *tg.WalletTonConnectSubmitConnectResultRequest) (any, error) {
+		return nil, r.walletCapabilityUnsupported(ctx, "tonconnect-connect-result", 5)
+	})
+	registerRPC[*tg.WalletTonConnectClaimRequestRequest](d, tlprofile.SemanticMethodWalletTonConnectClaimRequest, func(ctx context.Context, _ *tg.WalletTonConnectClaimRequestRequest) (any, error) {
+		return nil, r.walletCapabilityUnsupported(ctx, "tonconnect-claim", 10)
+	})
+	registerRPC[*tg.WalletTonConnectSubmitResponseRequest](d, tlprofile.SemanticMethodWalletTonConnectSubmitResponse, func(ctx context.Context, _ *tg.WalletTonConnectSubmitResponseRequest) (any, error) {
+		return nil, r.walletCapabilityUnsupported(ctx, "tonconnect-response", 10)
+	})
+	registerRPC[*tg.WalletTonConnectCloseSessionRequest](d, tlprofile.SemanticMethodWalletTonConnectCloseSession, func(ctx context.Context, _ *tg.WalletTonConnectCloseSessionRequest) (any, error) {
+		return nil, r.walletCapabilityUnsupported(ctx, "tonconnect-close", 10)
+	})
+}
+
+// walletCapabilityUnsupported authenticates and rate-limits the caller, then
+// refuses a wallet capability telesrv does not have.
+//
+// WALLET_UNAVAILABLE rather than a bespoke code: it is the same answer this file
+// gives elsewhere for an unavailable wallet capability, and it is an error code
+// clients already handle.
+func (r *Router) walletCapabilityUnsupported(ctx context.Context, scope string, limit int) error {
+	if _, _, err := r.walletCaller(ctx, scope, limit); err != nil {
+		return err
+	}
+	return tgerr.New(400, "WALLET_UNAVAILABLE")
 }
 
 func (r *Router) walletCaller(ctx context.Context, scope string, limit int) (int64, [8]byte, error) {
