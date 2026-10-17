@@ -91,6 +91,15 @@ jobs:
         working-directory: cmd/telesrv-admin/web
         run: npm run build
 
+      - name: Check the generated API-doc tables
+        # docs/admin-panel-api.{en,ru}.md carry route and permission tables
+        # generated from nav.ts / permissions.tsx / security.go. They drifted
+        # badly once because nothing compared them to the source, so the check
+        # is the whole point: it fails when a page or a right is added and the
+        # docs are not regenerated with
+        #   python3 scripts/gen_admin_panel_doc_tables.py --write
+        run: python3 scripts/gen_admin_panel_doc_tables.py --check
+
   grammystore:
     name: Grammy store bot
     runs-on: ubuntu-24.04
