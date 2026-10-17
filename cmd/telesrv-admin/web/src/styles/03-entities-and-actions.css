@@ -1827,6 +1827,10 @@ td.evidence-message-cell {
 }
 
 /* Server Settings' Settings/Services tab bar. */
+/* A section with five tabs (Commerce) does not fit a 390px screen at
+   fit-content: the bar was overflowing the page and pushing the whole layout
+   wide. It scrolls horizontally instead, which keeps every tab reachable on a
+   phone and keeps the bar visually a bar rather than a clipped edge. */
 .tab-bar {
   display: flex;
   gap: 4px;
@@ -1836,9 +1840,14 @@ td.evidence-message-cell {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .tab-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
   appearance: none;
   border: none;
   background: transparent;
