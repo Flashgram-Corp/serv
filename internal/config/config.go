@@ -663,11 +663,19 @@ type Config struct {
 	// RatingActivityCap bounds the activity component so activity alone cannot
 	// outweigh Stars and moderation; 0 leaves it uncapped.
 	RatingActivityCap int64
+	// DonationsEnabled is the master switch for crypto donations (deposit ->
+	// Stars). OFF by default, and that default is the point: the feature takes
+	// custody of real funds (a BIP39 mnemonic in the database, encrypted with a
+	// locally-managed key) and dials third-party chain endpoints, so neither
+	// should happen to a deployment that never asked for it. Turning it on
+	// provisions the wallet and starts a watcher per enabled chain; each chain
+	// still has to be enabled separately in the admin panel.
+	DonationsEnabled bool
 	// DonationWalletKeyPath is where the crypto donations AES-256-GCM
-	// encryption key lives on disk -- generated automatically on first run,
-	// same "works out of the box" pattern as RSAKeyPath. The wallet mnemonic
-	// itself is generated automatically too, the first time the server
-	// starts with a store that doesn't have one yet. See docs/donations.md.
+	// encryption key lives on disk -- generated automatically the first time
+	// donations are enabled, same pattern as RSAKeyPath. Losing this file
+	// means losing the wallet: the encrypted seed in the database cannot be
+	// decrypted without it. See docs/donations.md.
 	DonationWalletKeyPath string
 	// DonationWalletKey, if set, overrides DonationWalletKeyPath with a
 	// literal 64-hex-char key instead of reading/generating a local file --
@@ -1246,6 +1254,7 @@ func Load() (Config, error) {
 		StarGiftResellDelay:              envDurationOr("TELESRV_STARGIFT_RESELL_DELAY", 0),
 		StarGiftCraftDelay:               envDurationOr("TELESRV_STARGIFT_CRAFT_DELAY", 0),
 		StarGiftCraftChancePermille:      envIntOr("TELESRV_STARGIFT_CRAFT_CHANCE_PERMILLE", 250),
+		DonationsEnabled:                 envBoolOr("TELESRV_DONATIONS_ENABLED", false),
 		DonationWalletKeyPath:            envOr("TELESRV_DONATION_WALLET_KEY_PATH", "data/donation_wallet.key"),
 		DonationWalletKey:                strings.TrimSpace(envAllowEmptyOr("TELESRV_DONATION_WALLET_KEY", "")),
 		DonationPollInterval:             envDurationOr("TELESRV_DONATION_POLL_INTERVAL", 5*time.Second),
