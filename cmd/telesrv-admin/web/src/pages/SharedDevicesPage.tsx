@@ -54,7 +54,6 @@ export function SharedDevicesPage({ navigate }: { navigate: Navigate }) {
       eyebrow={t("sharedDevices.eyebrow")}
       actions={
         <>
-      <SectionTabs sectionId="accounts" active="/accounts/shared-devices" navigate={navigate} />
           <button className="btn icon-text" type="button" onClick={() => navigate("/accounts")}>
             <ArrowLeft size={15} /> {t("sharedDevices.back")}
           </button>
@@ -64,6 +63,7 @@ export function SharedDevicesPage({ navigate }: { navigate: Navigate }) {
         </>
       }
     >
+      <SectionTabs sectionId="accounts" active="/accounts/shared-devices" navigate={navigate} />
       {error && <Alert>{error}</Alert>}
       <div className="metric-row">
         <Metric label={t("sharedDevices.groupsOnPage")} value={String(groups.length)} />

@@ -538,6 +538,15 @@ a {
     flex: 1;
     min-height: 0;
     overflow: auto;
+    /* Stop the one implicit row from absorbing the leftover height. A grid
+       container with a definite height stretches its auto-sized rows by
+       default, and every page in the panel is a single .page-frame -- so each
+       page card was pulled to the full viewport with its own rows smeared out
+       to match, which is the "everything is stretched" look. The overview
+       opts back in with an explicit 1fr row (.content:has(> .overview) in
+       02-pages-and-forms.css); everything else stacks from the top, which is
+       how it behaved before this media query existed. */
+    align-content: start;
   }
 }
 

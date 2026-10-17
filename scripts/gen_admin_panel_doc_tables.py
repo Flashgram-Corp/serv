@@ -20,6 +20,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 WEB = ROOT / "cmd/telesrv-admin/web/src"
+WEB_PAGES = WEB / "pages"
 SERVER_GO = ROOT / "cmd/telesrv-admin/server.go"
 
 # ---------------------------------------------------------------- nav sections
@@ -174,6 +175,53 @@ def parse_routes() -> list[tuple[str, str, str, str]]:
     return out
 
 
+# ------------------------------------------------------- section tab placement
+
+
+def _actions_region(text: str, offset: int) -> tuple[int, int] | None:
+    """Return the (start, end) of the nearest preceding `actions={...}` region.
+
+    Braces are matched rather than lines counted because a prop value is a JSX
+    expression, not a fixed number of lines.
+    """
+    start = text.rfind("actions={", 0, offset)
+    if start < 0:
+        return None
+    depth = 0
+    for i in range(start + len("actions="), len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return (start, i)
+    return None
+
+
+def misplaced_section_tabs() -> list[str]:
+    """Pages whose <SectionTabs> sits inside PageFrame's `actions` prop.
+
+    PageFrame renders `actions` into the header's right-aligned action row and
+    everything else below the title, so the section sub-menu only belongs among
+    the children. Seven pages got it wrong once -- three of them nested the tab
+    bar inside a <button>, which is invalid HTML -- and nothing caught it,
+    because the component compiles and renders either way. It is checked here
+    for the same reason the tables are: a placement that is wrong but renders is
+    exactly the kind of drift that survives review.
+    """
+    bad: list[str] = []
+    for page in sorted(WEB_PAGES.glob("*.tsx")):
+        text = page.read_text(encoding="utf-8")
+        offset = 0
+        for lineno, line in enumerate(text.splitlines(), 1):
+            if "<SectionTabs" in line:
+                region = _actions_region(text, offset)
+                if region and region[0] < offset < region[1]:
+                    bad.append(f"{page.name}:{lineno}")
+            offset += len(line) + 1
+    return bad
+
+
 # ------------------------------------------------------------------- rendering
 
 GATE_TO_PERMISSION = {
@@ -324,7 +372,20 @@ def main() -> int:
             print("stale generated tables:\n  " + "\n  ".join(stale), file=sys.stderr)
             print("\nrun: python3 scripts/gen_admin_panel_doc_tables.py --write", file=sys.stderr)
             return 1
+        misplaced = misplaced_section_tabs()
+        if misplaced:
+            print(
+                "<SectionTabs> inside a PageFrame actions prop:\n  " + "\n  ".join(misplaced),
+                file=sys.stderr,
+            )
+            print(
+                "\nSectionTabs renders into the header action row there. Move it to be"
+                " the first child of PageFrame instead.",
+                file=sys.stderr,
+            )
+            return 1
         print("generated admin-panel doc tables are current")
+        print("section tab bars are placed as PageFrame children")
         return 0
 
     if args.write:

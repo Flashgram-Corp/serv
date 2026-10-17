@@ -91,7 +91,6 @@ export function AccountsPage({ navigate }: { navigate: Navigate }) {
       eyebrow={data?.listing === false ? t("account.queryResults") : t("account.recentActive")}
       actions={
         <>
-      <SectionTabs sectionId="accounts" active="/accounts" navigate={navigate} />
           <button className="btn icon-text" type="button" onClick={() => navigate("/accounts/shared-devices")}>
             <Smartphone size={15} /> {t("account.sharedDevices")}
           </button>
@@ -101,6 +100,7 @@ export function AccountsPage({ navigate }: { navigate: Navigate }) {
         </>
       }
     >
+      <SectionTabs sectionId="accounts" active="/accounts" navigate={navigate} />
       {error && <Alert>{error}</Alert>}
       <div className="metric-row">
         <Metric label={t("account.currentPage")} value={String(data?.rows.length ?? 0)} />

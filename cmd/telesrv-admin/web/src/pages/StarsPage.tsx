@@ -57,11 +57,11 @@ export function StarsPage({ navigate }: { navigate: Navigate }) {
       eyebrow={t("stars.eyebrow")}
       actions={
         <button className="btn icon-text" type="button" onClick={() => load(false)} disabled={busy}>
-      <SectionTabs sectionId="commerce" active="/stars" navigate={navigate} />
           <RefreshCw size={15} className={busy ? "spin" : ""} /> {t("common.refresh")}
         </button>
       }
     >
+      <SectionTabs sectionId="commerce" active="/stars" navigate={navigate} />
       {error && <Alert>{error}</Alert>}
       <div className="metric-row">
         <Metric label={t("stars.metricLoaded")} value={String(rows.length)} />
