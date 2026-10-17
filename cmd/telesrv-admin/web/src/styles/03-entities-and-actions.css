@@ -128,6 +128,29 @@ td.evidence-message-cell {
   border-bottom: 1px solid var(--line);
 }
 
+/* Irreversible actions get their own block, visually cut off from the routine
+   controls above it: a hairline in the danger tone on all sides, a tinted
+   background, and space above. It reads as "not one of the others" before the
+   label is parsed. */
+.account-danger-zone {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px;
+  background: var(--danger-tint);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius);
+}
+
+.account-danger-zone .dock-title {
+  color: var(--danger);
+  border-bottom-color: var(--danger-border);
+}
+
+.account-danger-zone .muted {
+  margin: 0;
+}
+
 .action-dock > .btn,
 .action-dock .action-stack .btn {
   width: 100%;
@@ -1804,6 +1827,10 @@ td.evidence-message-cell {
 }
 
 /* Server Settings' Settings/Services tab bar. */
+/* A section with five tabs (Commerce) does not fit a 390px screen at
+   fit-content: the bar was overflowing the page and pushing the whole layout
+   wide. It scrolls horizontally instead, which keeps every tab reachable on a
+   phone and keeps the bar visually a bar rather than a clipped edge. */
 .tab-bar {
   display: flex;
   gap: 4px;
@@ -1813,9 +1840,14 @@ td.evidence-message-cell {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .tab-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
   appearance: none;
   border: none;
   background: transparent;

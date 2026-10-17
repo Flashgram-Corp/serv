@@ -7,6 +7,7 @@ import { displayName, displayUsername, formatQuantity, formatSigned, formatUnix 
 import type { Navigate } from "../routing";
 import type { StarsLedgerEntryRow, StarsLedgerResponse } from "../types";
 import { GrantedBadge } from "./StarsPage";
+import { SectionTabs } from "../components/SectionTabs";
 
 export function StarsDetailPage({ userID, navigate }: { userID: string; navigate: Navigate }) {
   const { t } = useI18n();
@@ -57,6 +58,7 @@ export function StarsDetailPage({ userID, navigate }: { userID: string; navigate
       eyebrow={t("stars.detailEyebrow")}
       actions={
         <>
+      <SectionTabs sectionId="commerce" active="/stars" navigate={navigate} />
           <button className="btn icon-text" type="button" onClick={() => navigate("/stars")}>
             <ArrowLeft size={15} /> {t("common.backToList")}
           </button>

@@ -1501,29 +1501,47 @@ func run(logger *zap.Logger) error {
 			logger.Info("TON Proof gift claim (test) enabled", zap.String("url", cfg.StarGiftClaimTestPublicBaseURL), zap.String("bot", "@claimtest"))
 		}
 	}
-	// Crypto donations (deposit -> Stars): works out of the box, no manual
-	// setup step. The encryption key is a local file, generated the first
-	// time the server ever runs (same pattern as the RSA key below) unless
-	// TELESRV_DONATION_WALLET_KEY overrides it with a literal key; the
-	// wallet mnemonic itself is generated and stored, encrypted, the first
-	// time the server finds none in the database. See docs/donations.md.
-	donationWalletKey, err := donationsWalletKey(cfg)
-	if err != nil {
-		return fmt.Errorf("init donations wallet key: %w", err)
-	}
+	// Crypto donations (deposit -> Stars): OFF unless TELESRV_DONATIONS_ENABLED
+	// says otherwise.
+	//
+	// It used to be on by default, which was wrong twice over. The wallet was
+	// provisioned on first boot of every deployment -- a real custodial BIP39
+	// mnemonic, a data/donation_wallet.key, and a warning about backing it up,
+	// created for a feature the operator had not asked for and could not use.
+	// And the seeded registry enabled the local Ganache chain, so every boot
+	// then dialled 127.0.0.1:7545, failed, and logged an ERROR for a chain
+	// that does not exist outside a developer's laptop.
+	//
+	// The service object is still constructed and still handed to the bot and
+	// the admin service, because both already treat it as optional: the bot's
+	// /deposit answers from a nil source, and the admin Donations page renders
+	// "not provisioned" against an empty chain list rather than erroring. That
+	// is deliberate -- an operator who has not enabled the feature can still
+	// read what it would take, without the server having quietly taken custody
+	// of anything.
 	donationStore := postgres.NewDonationStore(pool)
-	donationsService, err := donationsapp.NewService(ctx, donationStore, donationWalletKey)
-	if err != nil {
-		return fmt.Errorf("init donations service: %w", err)
-	}
-	if !donationsService.Ready() {
-		if _, err := donationsService.EnsureWallet(ctx); err != nil {
-			return fmt.Errorf("provision donations wallet: %w", err)
+	donationsService, donationsDeps := (*donationsapp.Service)(nil), adminapp.DonationsService(nil)
+	if cfg.DonationsEnabled {
+		donationWalletKey, err := donationsWalletKey(cfg)
+		if err != nil {
+			return fmt.Errorf("init donations wallet key: %w", err)
 		}
-		logger.Warn("generated a new crypto donations wallet -- recovery phrase stored encrypted, back up data/donation_wallet.key")
+		donationsService, err = donationsapp.NewService(ctx, donationStore, donationWalletKey)
+		if err != nil {
+			return fmt.Errorf("init donations service: %w", err)
+		}
+		if !donationsService.Ready() {
+			if _, err := donationsService.EnsureWallet(ctx); err != nil {
+				return fmt.Errorf("provision donations wallet: %w", err)
+			}
+			logger.Warn("generated a new crypto donations wallet -- recovery phrase stored encrypted, back up data/donation_wallet.key")
+		}
+		botsService.SetDonationsSource(donationsService)
+		donationsService.SetNotifier(botsService)
+		donationsDeps = donationsService
+	} else {
+		logger.Info("crypto donations disabled; set TELESRV_DONATIONS_ENABLED=true and enable a chain to turn it on")
 	}
-	botsService.SetDonationsSource(donationsService)
-	donationsService.SetNotifier(botsService)
 	// Passkey:凭据持久化走 postgres;一次性挑战走进程内内存(短 TTL,与 QR 登录 token
 	// 同属进程内一次性凭据,不跨实例)。
 	passkeyStore := postgres.NewPasskeyStore(pool)
@@ -1915,7 +1933,7 @@ func run(logger *zap.Logger) error {
 		UserLookup:              userStore,
 		Account:                 accountService,
 		Photos:                  filesService,
-		Donations:               donationsService,
+		Donations:               donationsDeps,
 		Stars:                   starsService,
 		Premium:                 premiumService,
 		StarsNotifier:           router,
@@ -2089,20 +2107,38 @@ func run(logger *zap.Logger) error {
 	go router.RunInlineBotPushSubscriber(ctx)
 	go router.RunBotCallbackAnswerSubscriber(ctx)
 	go router.RunEphemeralPushSubscriber(ctx)
-	if donationsService.Ready() {
+	// Watchers only exist when the feature is switched on AND the wallet is
+	// provisioned. EnabledChains can still return a chain whose rpc_url an
+	// operator has since cleared, so each one is checked rather than dialed
+	// blind -- that was the source of a connection-refused ERROR on every boot
+	// of every server (see the seed migration's ganache row).
+	if donationsService != nil && donationsService.Ready() {
 		donationChains, err := donationsService.EnabledChains(ctx)
 		if err != nil {
 			logger.Warn("list enabled donation chains failed; no donation watchers started", zap.Error(err))
 		}
 		for _, chain := range donationChains {
 			if !chain.Watchable() {
-				continue // enabled but not yet configured (e.g. rpc_url still empty) -- an operator will fill it in
+				// Enabled but not yet configured (empty rpc_url, or no price
+				// feed). Say so once, at Warn: this is a row an operator will
+				// finish filling in, not a fault in the server.
+				logger.Named("donations").Named(chain.Key).Warn(
+					"chain is enabled but has no RPC endpoint; no watcher started", zap.String("rpc_url", chain.RPCURL))
+				continue
 			}
 			chainLog := logger.Named("donations").Named(chain.Key)
 			go func(chainKey string, log *zap.Logger) {
-				if err := donationsService.WatchChain(ctx, chainKey, cfg.DonationPollInterval, log); err != nil && !errors.Is(err, context.Canceled) {
-					log.Error("donation watcher stopped", zap.Error(err))
+				err := donationsService.WatchChain(ctx, chainKey, cfg.DonationPollInterval, log)
+				if err == nil || errors.Is(err, context.Canceled) {
+					return
 				}
+				// A watcher that stops is either the chain being unreachable
+				// or the operator misconfiguring it, and in both cases the
+				// operator has to look at it. It is a configuration problem
+				// with the deployment, not an internal failure, so it is a
+				// Warn with the chain named -- previously every boot logged
+				// an unparameterised ERROR for the seeded local chain.
+				log.Warn("donation watcher stopped", zap.Error(err))
 			}(chain.Key, chainLog)
 		}
 	}

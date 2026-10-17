@@ -7,6 +7,7 @@ import { useI18n } from "../i18n";
 import { displayName, displayPhone, displayUsername, formatDate } from "../lib/format";
 import type { Navigate } from "../routing";
 import type { SharedDeviceGroup } from "../types";
+import { SectionTabs } from "../components/SectionTabs";
 
 // SharedDevicesPage surfaces authorizations that look like they came from the
 // same physical device but belong to different accounts — a lead worth
@@ -53,6 +54,7 @@ export function SharedDevicesPage({ navigate }: { navigate: Navigate }) {
       eyebrow={t("sharedDevices.eyebrow")}
       actions={
         <>
+      <SectionTabs sectionId="accounts" active="/accounts/shared-devices" navigate={navigate} />
           <button className="btn icon-text" type="button" onClick={() => navigate("/accounts")}>
             <ArrowLeft size={15} /> {t("sharedDevices.back")}
           </button>
