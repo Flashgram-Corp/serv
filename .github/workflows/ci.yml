@@ -220,6 +220,12 @@ jobs:
             test "$(docker inspect --format '{{json .HostConfig.SecurityOpt}}' "$container_id")" = '["no-new-privileges:true"]'
             test "$(docker inspect --format '{{.HostConfig.NetworkMode}}' "$container_id")" = "host"
           done
+          # The wallet state directory holds per-account key material and
+          # NewFileStore refuses anything group- or world-accessible. Assert the
+          # mode on the mounted volume rather than trusting the image build: a
+          # permissive mode here is what stopped the server from booting.
+          server_container="$("${compose[@]}" ps --quiet server)"
+          test "$(docker exec "$server_container" stat -c %a /var/lib/telesrv/wallet)" = "700"
           curl --fail --silent --show-error http://127.0.0.1:2401/healthz | grep -qx ok
           curl --fail --silent --show-error http://127.0.0.1:2600/ >/dev/null
           timeout 5 bash -c 'exec 3<>/dev/tcp/127.0.0.1/2400'
