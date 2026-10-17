@@ -1,11 +1,15 @@
 name: CI
 
 on:
+  # Every branch push runs CI, not just the release branches. A feature branch
+  # that never gets a run is a branch whose breakage is invisible until someone
+  # opens a PR and waits; catching it at push time is the whole point of having
+  # the workflow. Tags are excluded because they are not branch state.
   push:
     branches:
-      - main
-      - grammy
-      - admin
+      - "**"
+    tags-ignore:
+      - "**"
   pull_request:
   workflow_dispatch:
   workflow_call:

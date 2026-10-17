@@ -135,13 +135,21 @@ func (r *Router) registerWallet(d *tlprofile.Dispatcher) {
 	// wallet_gasless_daily_transfers and wallet_gasless_min_nanos, so the client has
 	// already been told gasless transfers exist and offers them; answering its
 	// follow-up RPC with a hard error contradicts what we told it, in the middle of
-	// composing a transfer. An empty Updates vector claims nothing about running a
+	// composing a transfer. An Updates with no entries claims nothing about running a
 	// relay -- it reports no gasless progress to announce, which is true.
+	// The bare Updates type is required here: the schema returns `Updates`, not
+	// `Vector<Update>`, and a vector fails to encode.
 	registerRPC[*tg.WalletGetGaslessInfoRequest](d, tlprofile.SemanticMethodWalletGetGaslessInfo, func(ctx context.Context, _ *tg.WalletGetGaslessInfoRequest) (any, error) {
 		if _, _, err := r.walletCaller(ctx, "gasless-info", 30); err != nil {
 			return nil, err
 		}
-		return []tg.UpdateClass{}, nil
+		return &tg.Updates{
+			Updates: []tg.UpdateClass{},
+			Users:   []tg.UserClass{},
+			Chats:   []tg.ChatClass{},
+			Date:    int(r.clock.Now().Unix()),
+			Seq:     0,
+		}, nil
 	})
 
 	// Each of these would have to create or drive a session, so each refuses.
