@@ -3,6 +3,8 @@ package help
 import (
 	"encoding/json"
 	"testing"
+
+	"telesrv/internal/domain"
 )
 
 // The app config is assembled by string concatenation, so a fragment missing a
@@ -24,7 +26,7 @@ func TestDefaultAppConfigJSONParsesAndCarriesWalletKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	for key, want := range map[string]any{
-		"ton_usd_rate":                   1.3448279670684584,
+		"ton_usd_rate":                   domain.TonUSDRate,
 		"wallet_available":               true,
 		"wallet_transfer_min_nanos":      float64(100000000),
 		"wallet_gasless_min_nanos":       float64(100000000),

@@ -71,7 +71,10 @@ const tdesktopNoForwardsAppConfig = `,"no_forwards_request_expire_period":86400`
 // These are operator-independent protocol constants rather than per-deployment
 // settings, which is why they are a const and not an option like the wallet
 // availability flag.
-const tonAppConfigFragment = `,"ton_blockchain_explorer_url":"https://gram.org/","ton_proxy_address":"magic.org","ton_topup_url":"https://fragment.com/ads/topup","ton_usd_rate":1.3448279670684584,"ton_stargift_resale_amount_max":100000000000000,"ton_stargift_resale_amount_min":7000000000,"ton_stargift_resale_commission_permille":900,"ton_suggested_post_amount_max":10000000000000,"ton_suggested_post_amount_min":10000000,"ton_suggested_post_commission_permille":850,"starref_connect_allowed":true,"starref_program_allowed":true,"starref_min_commission_permille":1,"starref_max_commission_permille":800,"starref_start_param_prefixes":["_tgr_"]`
+func tonAppConfigFragment() string {
+	return `,"ton_usd_rate":` + strconv.FormatFloat(domain.TonUSDRate, 'f', -1, 64) +
+		`,"ton_blockchain_explorer_url":"https://gram.org/","ton_proxy_address":"magic.org","ton_topup_url":"https://fragment.com/ads/topup","ton_stargift_resale_amount_max":100000000000000,"ton_stargift_resale_amount_min":7000000000,"ton_stargift_resale_commission_permille":900,"ton_suggested_post_amount_max":10000000000000,"ton_suggested_post_amount_min":10000000,"ton_suggested_post_commission_permille":850,"starref_connect_allowed":true,"starref_program_allowed":true,"starref_min_commission_permille":1,"starref_max_commission_permille":800,"starref_start_param_prefixes":["_tgr_"]`
+}
 
 // walletAppConfigFragment advertises the Layer 230 in-app TON wallet.
 //
@@ -92,7 +95,7 @@ func walletAppConfigFragment(available bool) string {
 		`,"wallet_gasless_daily_transfers":5`
 }
 
-const defaultAppConfigHash = 33 // 默认 app config 内容变更时必须递增，否则缓存端只会收到 notModified。
+const defaultAppConfigHash = 34 // 默认 app config 内容变更时必须递增，否则缓存端只会收到 notModified。
 
 // Service 提供客户端启动配置与国家区号目录。
 //
@@ -193,7 +196,7 @@ func defaultAppConfigJSONWithPremiumBot(mapboxToken, premiumBotUsername string, 
 	username, _ := json.Marshal(premiumBotUsername)
 	premiumFragment := `,"premium_bot_username":` + string(username)
 	androidInvoiceBilling := `,"premium_playmarket_direct_currency_list":` + compatandroid.DirectInvoiceCurrenciesJSON()
-	wallet := tonAppConfigFragment + walletAppConfigFragment(walletAvailable)
+	wallet := tonAppConfigFragment() + walletAppConfigFragment(walletAvailable)
 	if mapboxToken == "" {
 		return []byte(tdesktopDefaultAppConfigBase + tdesktopNoForwardsAppConfig + premiumFragment + androidInvoiceBilling + wallet + `}`)
 	}
