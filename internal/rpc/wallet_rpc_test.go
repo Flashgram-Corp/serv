@@ -28,6 +28,7 @@ type walletRPCFixture struct {
 	// field rather than a constant because "a wallet with no funds" is a case
 	// worth testing: it is exactly what a freshly created wallet returns.
 	balance   int64
+	txns      []domain.TonTransaction
 	created   domain.WalletLink
 	createErr error
 	replaced  bool
@@ -61,6 +62,14 @@ func (f *walletRPCFixture) ReplaceImported(context.Context, int64, [8]byte, []by
 	f.calls++
 	return domain.WalletLink{}, 0, domain.ErrWalletProofInvalid
 }
+func (f *walletRPCFixture) Transactions(_ context.Context, _ int64, _ domain.StarsTransactionQuery) (domain.TonTransactionPage, error) {
+	f.calls++
+	if f.txns == nil {
+		return domain.TonTransactionPage{Balance: f.balance, Transactions: []domain.TonTransaction{}}, nil
+	}
+	return domain.TonTransactionPage{Balance: f.balance, Transactions: f.txns}, nil
+}
+
 func (f *walletRPCFixture) Perform(_ context.Context, endpoint string, query, payload *string) (string, error) {
 	f.calls++
 	return `{"ok":true,"result":"0"}`, nil

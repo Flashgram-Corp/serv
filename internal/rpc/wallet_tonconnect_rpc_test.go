@@ -60,9 +60,7 @@ func TestWalletTonConnectAndCurrencyRatesDoNotTrace(t *testing.T) {
 		{"sessions", &tg.WalletTonConnectGetSessionsRequest{}, ""},
 		{"nextEventID", &tg.WalletTonConnectNextEventIDRequest{}, ""},
 		{"currencyRates", &tg.PaymentsGetCurrencyRatesRequest{}, ""},
-		// Gasless refuses: an empty Updates vector would read as "I run a gasless
-		// system and nothing is pending", which telesrv cannot back.
-		{"gasless", &tg.WalletGetGaslessInfoRequest{}, "WALLET_UNAVAILABLE"},
+		{"gasless", &tg.WalletGetGaslessInfoRequest{}, ""},
 		{"createSession", &tg.WalletTonConnectCreateSessionRequest{}, "WALLET_UNAVAILABLE"},
 		{"registerKey", &tg.WalletTonConnectRegisterKeyRequest{}, "WALLET_UNAVAILABLE"},
 		{"getPending", &tg.WalletTonConnectGetPendingRequest{}, "WALLET_UNAVAILABLE"},

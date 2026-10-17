@@ -1317,6 +1317,9 @@ type WalletService interface {
 	// Perform 转发一次 provider JSON 请求。provider 未配置时返回
 	// app/wallet.ErrProviderUnavailable，由 rpc 映射为 503，绝不回落到未知方法。
 	Perform(ctx context.Context, endpoint string, query, payload *string) (string, error)
+	// Transactions 返回账号本地账本的流水。资金流水存在 telesrv 自己的库里，
+	// 不在钱包状态目录里，所以由依赖注入而非 FileStore 提供。
+	Transactions(ctx context.Context, userID int64, query domain.StarsTransactionQuery) (domain.TonTransactionPage, error)
 }
 
 // PremiumService is the domain-only boundary for catalog reads, payment form

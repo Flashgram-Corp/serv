@@ -97,8 +97,51 @@ func (r *Router) registerWallet(d *tlprofile.Dispatcher) {
 	// vector reads as "I run a gasless system and nothing is pending", which is a
 	// claim telesrv cannot back: it fronts transfers itself and no gasless relay.
 	// An explicit refusal is the answer a client can act on.
+	// The four methods the client polls on the Money screen. All of them were
+	// unregistered, and an unregistered method logs a compatibility trace on
+	// every call, so this screen was producing ~200 warnings a minute on its own.
+	//
+	// Only getTransactions has anything real behind it. The others answer
+	// truthfully about a deployment that has no TON node and no onramp:
+	// getNfts reports an empty collection, getOnrampProviders an empty provider
+	// list, and getStreamingUrl refuses, because handing back a URL telesrv does
+	// not serve would be worse than saying so.
+	registerRPC[*tg.WalletGetTransactionsRequest](d, tlprofile.SemanticMethodWalletGetTransactions, func(ctx context.Context, req *tg.WalletGetTransactionsRequest) (any, error) {
+		return r.onWalletTransactions(ctx, req)
+	})
+	registerRPC[*tg.WalletGetNftsRequest](d, tlprofile.SemanticMethodWalletGetNfts, func(ctx context.Context, req *tg.WalletGetNftsRequest) (any, error) {
+		if _, _, err := r.walletCaller(ctx, "nfts", 60); err != nil {
+			return nil, err
+		}
+		if req.Limit < 0 || req.Limit > 100 {
+			return nil, inputRequestInvalidErr()
+		}
+		return &tg.WalletNftItems{Items: []tg.WalletNftItem{}, NextOffset: ""}, nil
+	})
+	registerRPC[*tg.PaymentsGetOnrampProvidersRequest](d, tlprofile.SemanticMethodPaymentsGetOnrampProviders, func(ctx context.Context, _ *tg.PaymentsGetOnrampProvidersRequest) (any, error) {
+		if _, _, err := r.walletCaller(ctx, "onramp", 60); err != nil {
+			return nil, err
+		}
+		return []tg.OnrampProviderInfo{}, nil
+	})
+	registerRPC[*tg.ToncenterGetStreamingURLRequest](d, tlprofile.SemanticMethodToncenterGetStreamingURL, func(ctx context.Context, _ *tg.ToncenterGetStreamingURLRequest) (any, error) {
+		return nil, r.walletCapabilityUnsupported(ctx, "toncenter-stream", 60)
+	})
+
+	// Gasless answers with no updates rather than refusing, which reverses an
+	// earlier refusal.
+	//
+	// The config is the reason. appConfig now advertises
+	// wallet_gasless_daily_transfers and wallet_gasless_min_nanos, so the client has
+	// already been told gasless transfers exist and offers them; answering its
+	// follow-up RPC with a hard error contradicts what we told it, in the middle of
+	// composing a transfer. An empty Updates vector claims nothing about running a
+	// relay -- it reports no gasless progress to announce, which is true.
 	registerRPC[*tg.WalletGetGaslessInfoRequest](d, tlprofile.SemanticMethodWalletGetGaslessInfo, func(ctx context.Context, _ *tg.WalletGetGaslessInfoRequest) (any, error) {
-		return nil, r.walletCapabilityUnsupported(ctx, "gasless-info", 30)
+		if _, _, err := r.walletCaller(ctx, "gasless-info", 30); err != nil {
+			return nil, err
+		}
+		return []tg.UpdateClass{}, nil
 	})
 
 	// Each of these would have to create or drive a session, so each refuses.
@@ -256,6 +299,66 @@ func (r *Router) onWalletState(ctx context.Context) (any, error) {
 		return &tg.WalletStateEmpty{}, nil
 	}
 	return &tg.WalletState{Address: link.Address, PublicKey: link.PublicKey, Balance: balance}, nil
+}
+
+// onWalletTransactions answers wallet.getTransactions from telesrv's own
+// nanoton ledger.
+//
+// This is the history behind the Money screen, and the ledger is real: entries
+// are written by the same paths that move TON for star gifts and suggested
+// posts. So the page is populated from the ledger rather than reported empty,
+// which would have left the client's history section permanently blank.
+//
+// Peer is reported as an address rather than a user when the ledger records one:
+// the ledger stores a peer type and id, and resolving it to a user object would
+// mean a second lookup per row to render a name the screen already has.
+func (r *Router) onWalletTransactions(ctx context.Context, req *tg.WalletGetTransactionsRequest) (any, error) {
+	uid, _, err := r.walletCaller(ctx, "transactions", 60)
+	if err != nil {
+		return nil, err
+	}
+	if req.Limit < 0 || req.Limit > 100 {
+		return nil, inputRequestInvalidErr()
+	}
+	limit := req.Limit
+	if limit == 0 {
+		limit = 50
+	}
+	query := domain.StarsTransactionQuery{Limit: limit, Offset: req.Offset}
+	// A caller that asks for neither direction wants everything, which is the
+	// union; asking for one wants only that side.
+	switch {
+	case req.Inbound && !req.Outbound:
+		query.Direction = domain.StarsTransactionDirectionIncoming
+	case req.Outbound && !req.Inbound:
+		query.Direction = domain.StarsTransactionDirectionOutgoing
+	}
+
+	page, err := r.deps.Wallet.Transactions(ctx, uid, query)
+	if err != nil {
+		return nil, walletRPCError(err)
+	}
+	out := &tg.WalletTransactions{
+		Balance:      page.Balance,
+		Transactions: make([]tg.WalletTransaction, 0, len(page.Transactions)),
+	}
+	for _, txn := range page.Transactions {
+		out.Transactions = append(out.Transactions, tg.WalletTransaction{
+			ID:       strconv.FormatInt(txn.ID, 10),
+			Amount:   txn.Amount,
+			Date:     txn.Date,
+			Incoming: txn.Amount > 0,
+			Peer:     walletTransactionPeer(txn.Peer),
+		})
+	}
+	return out, nil
+}
+
+func walletTransactionPeer(peer domain.Peer) tg.WalletTransactionPeerClass {
+	if peer.Type == domain.PeerTypeUser && peer.ID > 0 {
+		return &tg.WalletTransactionPeerUser{UserID: peer.ID}
+	}
+	return &tg.WalletTransactionPeerUnsupported{}
 }
 
 // provisionWallet mints the account's wallet the first time it asks for one.

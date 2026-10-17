@@ -31,45 +31,64 @@ func TestLayer230AdditionalBotUsernameRejected(t *testing.T) {
 	}
 }
 
-// Layer 230 wallet coverage splits in two, and the split is deliberate.
+// Layer 230 wallet coverage: every method the client polls is registered.
 //
-// getNfts stays unregistered: it needs a TON indexer to answer honestly, and a
-// traced unknown method is more truthful than one that fabricates a list. TON
-// Connect and gasless are registered and refuse instead, because a client polls
-// those continuously and every poll used to cost a compatibility trace in the
-// log. Refusing is still an honest answer, just a quieter one.
+// This test used to assert that getNfts stayed unregistered, on the reasoning
+// that it needs a TON indexer and a traced unknown method is more truthful than a
+// fabricated list. The client settled it: getNfts was polled 51 times in the
+// time it took to open one screen, so leaving it out cost a compatibility-trace
+// warning per poll for a screen that shows an empty collection correctly.
 //
-// This router carries no Wallet service on purpose: the answers below come from
-// the capability gate rather than from a backend, which is also the state a
-// deployment with the wallet disabled is in.
-func TestLayer230WalletChainMethodsSplitRegisteredFromTraced(t *testing.T) {
+// The split is now capability, not registration. Methods backed by something
+// real answer with it: getTransactions reads the ledger. Methods with nothing
+// behind them say so -- an empty list, or an explicit refusal where a fabricated
+// value would be worse than none. getNfts answers empty and streaming refuses;
+// both report the truth that telesrv holds no NFT index and serves no TON
+// stream.
+//
+// The router carries no Wallet service on purpose: the answers below come from
+// the capability gate rather than from a backend.
+func TestLayer230WalletSurfaceIsFullyRegistered(t *testing.T) {
 	core, logs := observer.New(zap.WarnLevel)
-	r := New(Config{DC: 2, IP: "127.0.0.1", Port: 2398}, Deps{}, zap.New(core), clock.System)
+	// A wallet service is present on purpose: the point is what each method
+	// answers when the wallet exists. A router without one reports
+	// WALLET_UNAVAILABLE for all of them, which is covered separately.
+	r := New(Config{DC: 2, IP: "127.0.0.1", Port: 2398}, Deps{Wallet: &walletRPCFixture{}}, zap.New(core), clock.System)
 
-	var wire bin.Buffer
-	if err := (&tg.InvokeWithLayerRequest{Layer: 230, Query: &tg.WalletGetNftsRequest{}}).Encode(&wire); err != nil {
-		t.Fatal(err)
+	ctx := WithAuthKeyID(WithUserID(context.Background(), 1), [8]byte{1})
+	answer := map[string]bin.Object{
+		"getNfts":      &tg.WalletGetNftsRequest{},
+		"gasless":      &tg.WalletGetGaslessInfoRequest{},
+		"tonConnect":   &tg.WalletTonConnectGetSessionsRequest{},
+		"onramp":       &tg.PaymentsGetOnrampProvidersRequest{},
+		"transactions": &tg.WalletGetTransactionsRequest{},
 	}
-	if _, _, err := r.DispatchWithMethod(WithUserID(context.Background(), 1), [8]byte{1}, 230, &wire); !tgerr.Is(err, "NOT_IMPLEMENTED") {
-		t.Fatalf("nfts: %v, want NOT_IMPLEMENTED -- it needs a TON indexer and must not fabricate a list", err)
+	for name, query := range answer {
+		wire := bin.Buffer{}
+		if err := (&tg.InvokeWithLayerRequest{Layer: 230, Query: query}).Encode(&wire); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := r.DispatchWithMethod(ctx, [8]byte{1}, 230, &wire); err != nil {
+			t.Fatalf("%s must answer, got %v", name, err)
+		}
 	}
 
 	for name, query := range map[string]bin.Object{
-		"gasless":       &tg.WalletGetGaslessInfoRequest{},
-		"tonConnect":    &tg.WalletTonConnectGetSessionsRequest{},
-		"tonConnectReq": &tg.WalletTonConnectCreateSessionRequest{},
+		"streaming":        &tg.ToncenterGetStreamingURLRequest{},
+		"tonConnectCreate": &tg.WalletTonConnectCreateSessionRequest{},
 	} {
 		wire := bin.Buffer{}
 		if err := (&tg.InvokeWithLayerRequest{Layer: 230, Query: query}).Encode(&wire); err != nil {
 			t.Fatal(err)
 		}
-		if _, _, err := r.DispatchWithMethod(WithUserID(context.Background(), 1), [8]byte{1}, 230, &wire); !tgerr.Is(err, "WALLET_UNAVAILABLE") {
+		if _, _, err := r.DispatchWithMethod(ctx, [8]byte{1}, 230, &wire); !tgerr.Is(err, "WALLET_UNAVAILABLE") {
 			t.Fatalf("%s: %v, want WALLET_UNAVAILABLE", name, err)
 		}
 	}
 
-	// Exactly one trace left: the single method that is genuinely unregistered.
-	if got := logs.FilterMessage("Unhandled RPC (compatibility trace)").Len(); got != 1 {
-		t.Fatalf("trace count = %d, want 1 (nfts only): %+v", got, logs.All())
+	// Nothing on the wallet surface may trace: a traced method is a warning per
+	// poll, and these are polled continuously.
+	if got := logs.FilterMessage("Unhandled RPC (compatibility trace)").Len(); got != 0 {
+		t.Fatalf("trace count = %d, want 0: %+v", got, logs.All())
 	}
 }

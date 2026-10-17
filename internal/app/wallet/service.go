@@ -41,6 +41,33 @@ type BalanceSource interface {
 	AccountBalance(ctx context.Context, userID int64) (int64, error)
 }
 
+// TransactionSource supplies the account's ledger history. It is injected the
+// same way BalanceSource is, because the ledger lives in telesrv's own database
+// rather than in the wallet state directory: the file store holds keys and
+// bindings, not money movement.
+type TransactionSource interface {
+	AccountTransactions(ctx context.Context, userID int64, query domain.StarsTransactionQuery) (domain.TonTransactionPage, error)
+}
+
+// TONLedgerTransactionSource reads history straight out of telesrv's internal
+// nanoton ledger.
+func TONLedgerTransactionSource(transactions func(context.Context, int64, domain.StarsTransactionQuery) (domain.TonTransactionPage, error)) TransactionSource {
+	return transactionSourceFunc(transactions)
+}
+
+type transactionSourceFunc func(context.Context, int64, domain.StarsTransactionQuery) (domain.TonTransactionPage, error)
+
+func (f transactionSourceFunc) AccountTransactions(ctx context.Context, userID int64, query domain.StarsTransactionQuery) (domain.TonTransactionPage, error) {
+	return f(ctx, userID, query)
+}
+
+// WithTransactionSource makes the ledger's history readable through the wallet.
+func WithTransactionSource(source TransactionSource) ServiceOption {
+	return func(s *Service) {
+		s.transactions = source
+	}
+}
+
 // balanceSourceFunc adapts a plain balance lookup to BalanceSource.
 type balanceSourceFunc func(context.Context, int64) (int64, error)
 
@@ -81,12 +108,13 @@ func WithKeyCipher(keys *KeyCipher) ServiceOption {
 }
 
 type Service struct {
-	store    Store
-	provider Provider
-	balances BalanceSource
-	keys     *KeyCipher
-	domain   string
-	now      func() time.Time
+	store        Store
+	provider     Provider
+	balances     BalanceSource
+	transactions TransactionSource
+	keys         *KeyCipher
+	domain       string
+	now          func() time.Time
 }
 
 // NewService wires the wallet identity store. provider may be nil: telesrv does
@@ -285,4 +313,28 @@ func (s *Service) Perform(ctx context.Context, endpoint string, query, payload *
 		return "", ErrProviderUnavailable
 	}
 	return s.provider.Perform(ctx, endpoint, query, payload)
+}
+
+// Transactions returns the account's ledger history, or an empty page when no
+// history source is configured.
+//
+// An absent source yields an empty page rather than an error: a deployment that
+// has no ledger to read has no history to report, and the client renders an empty
+// state for that. Failing the read would instead show the Money screen an error
+// in place of its history.
+func (s *Service) Transactions(ctx context.Context, userID int64, query domain.StarsTransactionQuery) (domain.TonTransactionPage, error) {
+	if s == nil || userID <= 0 {
+		return domain.TonTransactionPage{}, domain.ErrWalletProofInvalid
+	}
+	if s.transactions == nil {
+		return domain.TonTransactionPage{Balance: 0, Transactions: []domain.TonTransaction{}}, nil
+	}
+	page, err := s.transactions.AccountTransactions(ctx, userID, query)
+	if err != nil {
+		return domain.TonTransactionPage{}, err
+	}
+	if page.Transactions == nil {
+		page.Transactions = []domain.TonTransaction{}
+	}
+	return page, nil
 }

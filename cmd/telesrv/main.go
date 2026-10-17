@@ -1814,6 +1814,7 @@ func run(logger *zap.Logger) error {
 		}
 		walletService = walletapp.NewService(walletStore, walletProvider, cfg.AdvertiseIP,
 			walletapp.WithBalanceSource(walletapp.TONLedgerBalanceSource(starGiftLifecycleStore.TonBalance)),
+			walletapp.WithTransactionSource(walletapp.TONLedgerTransactionSource(starGiftLifecycleStore.TonTransactions)),
 			walletapp.WithKeyCipher(walletKeys))
 		logger.Info("应用内 TON 钱包已启用",
 			zap.String("state_dir", cfg.WalletStateDir),
