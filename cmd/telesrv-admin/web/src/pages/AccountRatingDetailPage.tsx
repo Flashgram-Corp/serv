@@ -8,6 +8,7 @@ import { displayUsername, formatDate, formatQuantity, formatSigned, toNumeric } 
 import type { Navigate } from "../routing";
 import type { AccountRatingDetail, AccountRatingEventKind, AccountRatingRow } from "../types";
 import { LevelBadge, RatingProgress, levelProgress } from "./AccountRatingsPage";
+import { SectionTabs } from "../components/SectionTabs";
 
 export function AccountRatingDetailPage({ userID, navigate }: { userID: string; navigate: Navigate }) {
   const { t } = useI18n();
@@ -53,6 +54,7 @@ export function AccountRatingDetailPage({ userID, navigate }: { userID: string; 
       eyebrow={t("rating.detailEyebrow")}
       actions={
         <>
+      <SectionTabs sectionId="accounts" active="/account-ratings" navigate={navigate} />
           <button className="btn icon-text" type="button" onClick={() => navigate("/account-ratings")}>
             <ArrowLeft size={15} /> {t("common.backToList")}
           </button>

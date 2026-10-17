@@ -6,6 +6,7 @@ import { useI18n } from "../i18n";
 import { displayUsername, formatDate, formatQuantity, toNumeric } from "../lib/format";
 import type { Navigate } from "../routing";
 import type { AccountRatingRow } from "../types";
+import { SectionTabs } from "../components/SectionTabs";
 
 export function AccountRatingsPage({ navigate }: { navigate: Navigate }) {
   const { t } = useI18n();
@@ -57,6 +58,7 @@ export function AccountRatingsPage({ navigate }: { navigate: Navigate }) {
       eyebrow={t("rating.eyebrow")}
       actions={
         <button className="btn icon-text" type="button" onClick={() => load(false)} disabled={busy}>
+      <SectionTabs sectionId="accounts" active="/account-ratings" navigate={navigate} />
           <RefreshCw size={15} className={busy ? "spin" : ""} /> {t("common.refresh")}
         </button>
       }

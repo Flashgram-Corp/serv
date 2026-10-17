@@ -303,6 +303,10 @@ export const api = {
   serverEnv: () => request<EnvGroup[]>("/api/server/env"),
   serverStatus: () => request<ServerStatus>("/api/server/status"),
   serverIconURL: (bust = 0) => `/api/server/icon?_=${bust}`,
+  // The login screen renders before a session exists, so it cannot read the
+  // server.manage-gated icon route. This one is public and serves the same
+  // bytes; the page falls back to /logo.png on a 404 (no icon configured).
+  publicServerIconURL: (bust = 0) => `/api/public/icon?_=${bust}`,
   uploadServerIcon: (form: FormData) => request<CommandResult>("/api/actions/upload-server-icon", { method: "POST", body: form }),
   action: (path: string, payload: Record<string, unknown>) => request<CommandResult>(path, {
     method: "POST",

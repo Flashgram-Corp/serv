@@ -3,7 +3,9 @@ import { useEffect, useState } from "react";
 import { api, errorMessage } from "../api";
 import { ActionButton } from "../components/ActionButton";
 import { Alert, Badge, EmptyRow, PageFrame } from "../components/ui";
+import type { Navigate } from "../routing";
 import type { ItemPrice } from "../types";
+import { SectionTabs } from "../components/SectionTabs";
 
 type PriceDraft = {
   starsPrice: string;
@@ -30,7 +32,7 @@ function draftValid(draft: PriceDraft): boolean {
 // merged over the defaults), the per-product kill switch, and the stars rate
 // the bot multiplies Telegram Star purchases by. Every save runs the console's
 // standard reason -> dry-run -> confirm flow through admin.Service.
-export function PricesPage() {
+export function PricesPage({ navigate }: { navigate: Navigate }) {
   const [rows, setRows] = useState<ItemPrice[]>([]);
   const [rate, setRate] = useState("");
   const [drafts, setDrafts] = useState<Record<string, PriceDraft>>({});
@@ -70,6 +72,7 @@ export function PricesPage() {
       eyebrow={"Product prices, availability and the Stars rate the bot bills purchases at"}
       actions={
         <button className="btn" type="button" onClick={() => void load()} disabled={busy}>
+      <SectionTabs sectionId="commerce" active="/prices" navigate={navigate} />
           {busy ? <Loader2 size={15} className="spin" /> : <RefreshCw size={15} />} {"Refresh"}
         </button>
       }

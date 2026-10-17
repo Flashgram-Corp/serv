@@ -1,7 +1,7 @@
 import { Users } from "lucide-react";
 import { useState } from "react";
 import { ActionButton } from "../components/ActionButton";
-import { SectionTabs, grantsTabs } from "../components/SectionTabs";
+import { SectionTabs } from "../components/SectionTabs";
 import { PageFrame } from "../components/ui";
 import { useI18n } from "../i18n";
 import type { Navigate } from "../routing";
@@ -18,7 +18,7 @@ export function StarIssuePage({ navigate }: { navigate: Navigate }) {
 
   return (
     <PageFrame title={t("starIssue.title")} eyebrow={t("starIssue.eyebrow")}>
-      <SectionTabs tabs={grantsTabs} active="/star-issue" navigate={navigate} />
+      <SectionTabs sectionId="commerce" active="/star-issue" navigate={navigate} />
       <section className="surface premium-operations-compact">
         <div className="premium-mass-grant">
           <div className="premium-mass-grant-head">

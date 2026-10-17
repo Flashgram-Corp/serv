@@ -4,9 +4,11 @@ import { api, errorMessage } from "../api";
 import { Alert, EmptyRow, Metric, PageFrame } from "../components/ui";
 import { useI18n } from "../i18n";
 import { formatBytes, formatQuantity } from "../lib/format";
+import type { Navigate } from "../routing";
 import type { StorageStatsResponse } from "../types";
+import { SectionTabs } from "../components/SectionTabs";
 
-export function StoragePage() {
+export function StoragePage({ navigate }: { navigate: Navigate }) {
   const { t } = useI18n();
   const [stats, setStats] = useState<StorageStatsResponse | null>(null);
   const [busy, setBusy] = useState(false);
@@ -38,6 +40,7 @@ export function StoragePage() {
       eyebrow={t("storage.eyebrow")}
       actions={
         <button className="btn icon-text" type="button" onClick={() => void refresh()} disabled={busy}>
+      <SectionTabs sectionId="media" active="/storage" navigate={navigate} />
           <RefreshCw size={15} className={busy ? "spin" : ""} /> {t("common.refresh")}
         </button>
       }

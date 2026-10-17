@@ -6,6 +6,7 @@ import { useI18n } from "../i18n";
 import { displayName, displayPhone, displayUsername, formatDate, formatQuantity } from "../lib/format";
 import type { Navigate } from "../routing";
 import type { StarsAccountRow } from "../types";
+import { SectionTabs } from "../components/SectionTabs";
 
 export function StarsPage({ navigate }: { navigate: Navigate }) {
   const { t } = useI18n();
@@ -56,6 +57,7 @@ export function StarsPage({ navigate }: { navigate: Navigate }) {
       eyebrow={t("stars.eyebrow")}
       actions={
         <button className="btn icon-text" type="button" onClick={() => load(false)} disabled={busy}>
+      <SectionTabs sectionId="commerce" active="/stars" navigate={navigate} />
           <RefreshCw size={15} className={busy ? "spin" : ""} /> {t("common.refresh")}
         </button>
       }

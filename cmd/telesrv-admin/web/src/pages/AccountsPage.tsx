@@ -9,6 +9,7 @@ import { displayName, displayPhone, formatDate, formatUnix } from "../lib/format
 import { accountMetrics } from "../lib/metrics";
 import type { Navigate } from "../routing";
 import type { AccountListResponse } from "../types";
+import { SectionTabs } from "../components/SectionTabs";
 
 type AccountCursor = { beforeID: number; beforeActiveUS: number };
 
@@ -90,6 +91,7 @@ export function AccountsPage({ navigate }: { navigate: Navigate }) {
       eyebrow={data?.listing === false ? t("account.queryResults") : t("account.recentActive")}
       actions={
         <>
+      <SectionTabs sectionId="accounts" active="/accounts" navigate={navigate} />
           <button className="btn icon-text" type="button" onClick={() => navigate("/accounts/shared-devices")}>
             <Smartphone size={15} /> {t("account.sharedDevices")}
           </button>

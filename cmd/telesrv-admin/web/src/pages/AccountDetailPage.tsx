@@ -12,6 +12,7 @@ import { useI18n } from "../i18n";
 import { displayName, displayPhone, displayUsername, formatDate, formatUnix, toInt } from "../lib/format";
 import type { Navigate } from "../routing";
 import type { AccountDetail } from "../types";
+import { SectionTabs } from "../components/SectionTabs";
 
 export function AccountDetailPage({ id, navigate }: { id: number; navigate: Navigate }) {
   const { t } = useI18n();
@@ -62,6 +63,7 @@ export function AccountDetailPage({ id, navigate }: { id: number; navigate: Navi
       eyebrow={t("account.profile")}
       actions={<button className="btn icon-text" onClick={() => navigate("/accounts")}><ArrowLeft size={15} /> {t("common.backToList")}</button>}
     >
+      <SectionTabs sectionId="accounts" active="/accounts" navigate={navigate} />
       <SplitLayout
         main={
           <div className="stacked-sections">
