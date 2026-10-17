@@ -1197,8 +1197,10 @@ type Deps struct {
 	SecretChats                  SecretChatService
 	Stars                        StarsService
 	Gifts                        GiftsService
-	Passkey                      PasskeyService
-	Themes                       ThemeService
+	// Wallet 是 Layer 230 应用内 TON 钱包；为 nil 时 wallet.* 回 WALLET_UNAVAILABLE。
+	Wallet  WalletService
+	Passkey PasskeyService
+	Themes  ThemeService
 	// GeoIP 把会话记录的 IP 解析为 account.getAuthorizations 展示用的国家/地区
 	// 文案。为 nil(未配置地理后端)时列表继续回传占位文案,与启用前一致。
 	GeoIP geoip.Resolver
@@ -1293,6 +1295,28 @@ type StarsService interface {
 	Credit(ctx context.Context, userID, amount int64, reason domain.StarsTransactionReason, peer domain.Peer, title, desc string) (domain.StarsBalance, error)
 	Debit(ctx context.Context, userID, amount int64, reason domain.StarsTransactionReason, peer domain.Peer, title, desc string) (domain.StarsBalance, error)
 	ListTransactions(ctx context.Context, userID int64, query domain.StarsTransactionQuery) (domain.StarsTransactionPage, error)
+}
+
+// WalletService 抽象 Layer 230 应用内 TON 钱包（app/wallet）：所有权挑战、账号与
+// TON 地址的绑定关系、以及（可选）第三方 provider 转发。为 nil(未配置钱包目录)时
+// wallet.* 一律回 WALLET_UNAVAILABLE，而不是把请求当成未知方法丢弃。
+type WalletService interface {
+	// GetProofChallenge 生成与账号 + MTProto 授权绑定的不可预测挑战。
+	GetProofChallenge(ctx context.Context, userID int64, authKeyID [8]byte) (domain.WalletChallenge, error)
+	// Links 返回给定账号已验证的 TON 地址绑定（只读，不创建）。
+	Links(ctx context.Context, userIDs []int64) ([]domain.WalletLink, error)
+	// State 返回账号当前钱包的绑定与本地账本余额；未绑定钱包时 ok=false，
+	// 调用方应回 walletStateEmpty 而不是伪造一个地址。
+	State(ctx context.Context, userID int64) (link domain.WalletLink, balance int64, ok bool, err error)
+	// ReplaceImported 校验 Ed25519 所有权证明后绑定地址；allowReplacement 为真
+	// 时允许在已有绑定的前提下换绑（调用方须先完成账号密码校验）。
+	ReplaceImported(ctx context.Context, userID int64, authKeyID [8]byte, publicKey []byte, timestamp int, signature []byte, allowReplacement bool) (domain.WalletLink, int64, error)
+	// Create 由 telesrv 生成 TON 钱包：私钥只以密文留在服务端，客户端拿到的
+	// 只有地址、公钥与本地账本余额。未配置服务端密钥时返回能力不可用。
+	Create(ctx context.Context, userID int64, authKeyID [8]byte, allowReplacement bool) (domain.WalletLink, int64, error)
+	// Perform 转发一次 provider JSON 请求。provider 未配置时返回
+	// app/wallet.ErrProviderUnavailable，由 rpc 映射为 503，绝不回落到未知方法。
+	Perform(ctx context.Context, endpoint string, query, payload *string) (string, error)
 }
 
 // PremiumService is the domain-only boundary for catalog reads, payment form

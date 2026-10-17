@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -177,6 +178,16 @@ type Config struct {
 	TelegramLoginRetention         time.Duration
 	TelegramLoginSweepInterval     time.Duration
 	TelegramLoginSweepBatch        int
+	// WalletStateDir 是 Layer 230 应用内 TON 钱包的私有状态目录：每个账号一份
+	// 0600 JSON（挑战 + 已验证地址绑定），目录必须没有 group/other 权限。留空
+	// 即禁用钱包，此时 wallet.* 回 WALLET_UNAVAILABLE。
+	WalletStateDir string
+	// WalletKeyFile 是钱包私钥的 AES-256-GCM 主密钥文件。缺失时首次启动生成
+	// 0600 文件；与 MTProto RSA 身份密钥同属 data/ 下的“必须备份”文件。
+	WalletKeyFile string
+	// WalletToncenterAPIKey 选配。留空表示不连接任何 TON provider，
+	// toncenter.performApiRequest 直接回 WALLET_PROVIDER_UNAVAILABLE。
+	WalletToncenterAPIKey string
 	// Admin UI 独立进程配置项保留在统一配置中，cmd/telesrv-admin 也按同名 env 读取。
 	AdminUIAddr     string
 	AdminUIPassword string
@@ -1025,6 +1036,9 @@ func Load() (Config, error) {
 		TelegramLoginRetention:                envDurationOr("TELESRV_TELEGRAM_LOGIN_RETENTION", 7*24*time.Hour),
 		TelegramLoginSweepInterval:            envDurationOr("TELESRV_TELEGRAM_LOGIN_SWEEP_INTERVAL", 5*time.Minute),
 		TelegramLoginSweepBatch:               envIntOr("TELESRV_TELEGRAM_LOGIN_SWEEP_BATCH", 500),
+		WalletStateDir:                        strings.TrimSpace(envAllowEmptyOr("TELESRV_WALLET_STATE_DIR", "data/wallet")),
+		WalletKeyFile:                         envOr("TELESRV_WALLET_KEY_FILE", "data/wallet/keys.key"),
+		WalletToncenterAPIKey:                 strings.TrimSpace(envAllowEmptyOr("TELESRV_WALLET_TONCENTER_API_KEY", "")),
 		AdminUIPermissions:                    envListOr("TELESRV_ADMIN_UI_PERMISSIONS", []string{adminPermissionAll}),
 		AdminScopedTokens:                     adminScopedTokens,
 		GeoIPEndpoints:                        envListOr("TELESRV_GEOIP_ENDPOINTS", nil),
@@ -1347,6 +1361,9 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("TELESRV_PROFILE_PHOTO_CACHE_TTL must be greater than zero and at most 168h")
 	}
 	if err := validateStarGiftConfig(cfg); err != nil {
+		return Config{}, err
+	}
+	if err := validateWalletConfig(cfg); err != nil {
 		return Config{}, err
 	}
 	if err := validateAccountRatingConfig(cfg); err != nil {
@@ -1755,6 +1772,24 @@ func validateTelegramLoginConfig(cfg Config) error {
 		if _, err := netip.ParsePrefix(strings.TrimSpace(raw)); err != nil {
 			return fmt.Errorf("TELESRV_TELEGRAM_LOGIN_TRUSTED_PROXY_CIDRS contains invalid CIDR %q: %w", raw, err)
 		}
+	}
+	return nil
+}
+
+func validateWalletConfig(cfg Config) error {
+	// 钱包目录留空即禁用，此时不要求密钥文件存在；启用时必须给出私钥主密钥
+	// 路径，否则钱包状态会被写入明文风险无法接受的形态。
+	if cfg.WalletStateDir == "" {
+		if cfg.WalletToncenterAPIKey != "" {
+			return fmt.Errorf("TELESRV_WALLET_TONCENTER_API_KEY requires TELESRV_WALLET_STATE_DIR")
+		}
+		return nil
+	}
+	if strings.TrimSpace(cfg.WalletKeyFile) == "" {
+		return fmt.Errorf("TELESRV_WALLET_KEY_FILE must be set when TELESRV_WALLET_STATE_DIR is set")
+	}
+	if filepath.Clean(cfg.WalletStateDir) == string(filepath.Separator) {
+		return fmt.Errorf("TELESRV_WALLET_STATE_DIR must not be the filesystem root")
 	}
 	return nil
 }
