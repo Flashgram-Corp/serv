@@ -58,11 +58,11 @@ export function AccountRatingsPage({ navigate }: { navigate: Navigate }) {
       eyebrow={t("rating.eyebrow")}
       actions={
         <button className="btn icon-text" type="button" onClick={() => load(false)} disabled={busy}>
-      <SectionTabs sectionId="accounts" active="/account-ratings" navigate={navigate} />
           <RefreshCw size={15} className={busy ? "spin" : ""} /> {t("common.refresh")}
         </button>
       }
     >
+      <SectionTabs sectionId="accounts" active="/account-ratings" navigate={navigate} />
       {error && <Alert>{error}</Alert>}
       <div className="metric-row">
         <Metric label={t("rating.metricLoaded")} value={String(rows.length)} />

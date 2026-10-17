@@ -40,11 +40,11 @@ export function StoragePage({ navigate }: { navigate: Navigate }) {
       eyebrow={t("storage.eyebrow")}
       actions={
         <button className="btn icon-text" type="button" onClick={() => void refresh()} disabled={busy}>
-      <SectionTabs sectionId="media" active="/storage" navigate={navigate} />
           <RefreshCw size={15} className={busy ? "spin" : ""} /> {t("common.refresh")}
         </button>
       }
     >
+      <SectionTabs sectionId="media" active="/storage" navigate={navigate} />
       {error && <Alert>{error}</Alert>}
       <div className="metric-row">
         <Metric label={t("storage.physical")} value={stats ? formatBytes(stats.PhysicalBytes) : "-"} />

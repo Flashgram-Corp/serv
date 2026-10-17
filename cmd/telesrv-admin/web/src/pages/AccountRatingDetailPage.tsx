@@ -54,7 +54,6 @@ export function AccountRatingDetailPage({ userID, navigate }: { userID: string; 
       eyebrow={t("rating.detailEyebrow")}
       actions={
         <>
-      <SectionTabs sectionId="accounts" active="/account-ratings" navigate={navigate} />
           <button className="btn icon-text" type="button" onClick={() => navigate("/account-ratings")}>
             <ArrowLeft size={15} /> {t("common.backToList")}
           </button>
@@ -64,6 +63,7 @@ export function AccountRatingDetailPage({ userID, navigate }: { userID: string; 
         </>
       }
     >
+      <SectionTabs sectionId="accounts" active="/account-ratings" navigate={navigate} />
       {error && <Alert>{error}</Alert>}
       <SplitLayout
         main={

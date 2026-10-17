@@ -108,6 +108,42 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+/* The rest of the band pins its column count for the same reason. The three
+   summary panels are equal thirds of a desktop screen, which auto-fit resolves
+   to three columns -- correct for three figures, wrong for two and for four.
+
+   Every rule here is scoped to .overview-panel--* on purpose: StatsStrip on the
+   standalone statistics page is full width and reads correctly with auto-fit. */
+.overview-panel--economy .overview-tiles {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* Two queues. auto-fit gave them three columns, so they took two thirds of the
+   panel and left a hole; and the shared stretch rule above filled the whole
+   band height with them, which read as two enormous slabs with a number in the
+   middle. Hugging the content and centring the row keeps the tiles the size of
+   their neighbours' without the dead space underneath that the stretch existed
+   to avoid. */
+.overview-panel--queues .overview-tiles {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  flex: 0 0 auto;
+  align-content: center;
+}
+
+/* Nine counters in the left cell of the tall band. auto-fit found five columns
+   there and rendered 5+4, so nine figures used two rows of the four the panel
+   had -- the bottom half was empty and every tile was a cramped 124px. A fixed
+   3x3 fills the panel and makes each tile roughly twice as wide. */
+.overview-panel--people .overview-tiles {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  flex: 1;
+  grid-auto-rows: minmax(0, 1fr);
+}
+
+.overview-panel--people .stat-tile {
+  align-content: center;
+}
+
 /* The dense grids drop their secondary lines. "last 5 min", "saved by users"
    and "localfs backend" qualify the label rather than the figure, and across
    nine tiles each one costs more than the height of a whole extra row. */
@@ -209,6 +245,26 @@
     grid-auto-rows: auto;
   }
 
+  /* Back to auto-fit now that the panels are full width instead of a third of
+     it: a pinned 2- or 3-column grid is right for a desktop panel and wrong
+     for a stacked one. */
+  .overview-panel--economy .overview-tiles,
+  .overview-panel--queues .overview-tiles,
+  .overview-panel--people .overview-tiles {
+    grid-template-columns: repeat(auto-fit, minmax(124px, 1fr));
+  }
+
+  .overview-panel--queues .overview-tiles {
+    align-content: start;
+  }
+
+  /* The stacked people panel is as tall as its own content, so there is no
+     surplus for the fill rule to hand out. */
+  .overview-panel--people .overview-tiles {
+    flex: 0 0 auto;
+    grid-auto-rows: auto;
+  }
+
   .overview-main {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -291,6 +347,15 @@
 @media (max-width: 760px) {
   .overview-tiles,
   .overview-tiles--tight {
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  }
+
+  /* Same reason, restated at the panel's own specificity so the desktop pins
+     above do not win here -- 124px fits two columns on a phone where 110px
+     fits three. */
+  .overview-panel--economy .overview-tiles,
+  .overview-panel--queues .overview-tiles,
+  .overview-panel--people .overview-tiles {
     grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   }
 

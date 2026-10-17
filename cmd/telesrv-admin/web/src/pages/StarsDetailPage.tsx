@@ -58,7 +58,6 @@ export function StarsDetailPage({ userID, navigate }: { userID: string; navigate
       eyebrow={t("stars.detailEyebrow")}
       actions={
         <>
-      <SectionTabs sectionId="commerce" active="/stars" navigate={navigate} />
           <button className="btn icon-text" type="button" onClick={() => navigate("/stars")}>
             <ArrowLeft size={15} /> {t("common.backToList")}
           </button>
@@ -68,6 +67,7 @@ export function StarsDetailPage({ userID, navigate }: { userID: string; navigate
         </>
       }
     >
+      <SectionTabs sectionId="commerce" active="/stars" navigate={navigate} />
       {error && <Alert>{error}</Alert>}
       <SplitLayout
         main={

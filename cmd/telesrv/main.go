@@ -70,6 +70,7 @@ import (
 	"telesrv/internal/app/userprojection"
 	"telesrv/internal/app/users"
 	verificationapp "telesrv/internal/app/verification"
+	walletapp "telesrv/internal/app/wallet"
 	welcomemessagesapp "telesrv/internal/app/welcomemessages"
 	"telesrv/internal/botapi"
 	"telesrv/internal/branding"
@@ -1791,6 +1792,35 @@ func run(logger *zap.Logger) error {
 	} else {
 		logger.Info("会话地理归属未启用：account.getAuthorizations 继续回传 Unknown 占位文案")
 	}
+	// Layer 230 应用内 TON 钱包。默认启用:挑战/绑定状态只在本地 data/wallet,
+	// 余额来自 telesrv 自己的 TON 账本。provider(toncenter)默认不配置,因此
+	// toncenter.* 与余额查询都不会联系任何外部 TON 节点。
+	var walletService rpc.WalletService
+	if cfg.WalletStateDir != "" {
+		walletStore, err := walletapp.NewFileStore(cfg.WalletStateDir)
+		if err != nil {
+			return fmt.Errorf("open wallet state directory: %w", err)
+		}
+		defer func() { _ = walletStore.Close() }()
+		var walletProvider walletapp.Provider
+		if cfg.WalletToncenterAPIKey != "" {
+			walletProvider = walletapp.NewToncenter(cfg.WalletToncenterAPIKey)
+		}
+		// 主密钥缺失时自动生成 0600 文件；没有它 telesrv 就无法保管自己生成的
+		// 钱包，inputWalletNew 会被明确拒绝而不是落一份明文私钥。
+		walletKeys, err := walletapp.LoadOrCreateKeyCipher(cfg.WalletKeyFile)
+		if err != nil {
+			return fmt.Errorf("load wallet master key: %w", err)
+		}
+		walletService = walletapp.NewService(walletStore, walletProvider, cfg.AdvertiseIP,
+			walletapp.WithBalanceSource(walletapp.TONLedgerBalanceSource(starGiftLifecycleStore.TonBalance)),
+			walletapp.WithKeyCipher(walletKeys))
+		logger.Info("应用内 TON 钱包已启用",
+			zap.String("state_dir", cfg.WalletStateDir),
+			zap.Bool("ton_provider", walletProvider != nil))
+	} else {
+		logger.Info("应用内 TON 钱包未启用：wallet.* 回 WALLET_UNAVAILABLE")
+	}
 	router := rpc.New(rpc.Config{
 		DC:                       cfg.DC,
 		DefaultCountryCode:       cfg.DefaultCountryCode,
@@ -1885,6 +1915,7 @@ func run(logger *zap.Logger) error {
 		Stars:                        starsService,
 		Premium:                      premiumService,
 		Gifts:                        giftsService,
+		Wallet:                       walletService,
 		Passkey:                      passkeyService,
 		Themes:                       themeService,
 		GeoIP:                        geoIPResolver,

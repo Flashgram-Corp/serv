@@ -1637,6 +1637,16 @@ td.evidence-message-cell {
   flex-shrink: 0;
 }
 
+/* The uploaded server icon is a squircle everywhere else it appears: the
+   sidebar brand and the login screen both render it through .brand-mark at
+   30%. This card renders the same file through .avatar-photo-img, which is a
+   50% circle, so the operator's own logo read as a circle here and as a
+   rounded square in the two places they recognise it. Scoped to the edit slot
+   so the account avatars using .avatar-photo-img elsewhere keep their circles. */
+.avatar-edit-slot .avatar-photo-img {
+  border-radius: 30%;
+}
+
 .avatar-edit-btn {
   position: absolute;
   right: -4px;

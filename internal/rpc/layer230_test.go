@@ -31,18 +31,27 @@ func TestLayer230AdditionalBotUsernameRejected(t *testing.T) {
 	}
 }
 
-func TestLayer230WalletRemainsTracedUnimplemented(t *testing.T) {
+// Layer 230 wallet coverage: the identity and balance surface is implemented
+// (see wallet_rpc_test.go), while the chain-dependent parts stay explicitly
+// unimplemented and keep emitting the compatibility trace instead of pretending
+// telesrv owns a TON node.
+func TestLayer230WalletChainMethodsRemainTracedUnimplemented(t *testing.T) {
 	core, logs := observer.New(zap.WarnLevel)
 	r := New(Config{DC: 2, IP: "127.0.0.1", Port: 2398}, Deps{}, zap.New(core), clock.System)
-	var wire bin.Buffer
-	request := &tg.InvokeWithLayerRequest{Layer: 230, Query: &tg.WalletGetStateRequest{}}
-	if err := request.Encode(&wire); err != nil {
-		t.Fatal(err)
+	for name, query := range map[string]bin.Object{
+		"nfts":    &tg.WalletGetNftsRequest{},
+		"gasless": &tg.WalletGetGaslessInfoRequest{},
+	} {
+		var wire bin.Buffer
+		request := &tg.InvokeWithLayerRequest{Layer: 230, Query: query}
+		if err := request.Encode(&wire); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := r.DispatchWithMethod(WithUserID(context.Background(), 1), [8]byte{1}, 230, &wire); !tgerr.Is(err, "NOT_IMPLEMENTED") {
+			t.Fatalf("%s: %v", name, err)
+		}
 	}
-	if _, _, err := r.DispatchWithMethod(WithUserID(context.Background(), 1), [8]byte{1}, 230, &wire); !tgerr.Is(err, "NOT_IMPLEMENTED") {
-		t.Fatalf("unimplemented wallet: %v", err)
-	}
-	if logs.FilterMessage("Unhandled RPC (compatibility trace)").Len() != 1 {
+	if logs.FilterMessage("Unhandled RPC (compatibility trace)").Len() != 2 {
 		t.Fatalf("wallet trace missing: %+v", logs.All())
 	}
 }
