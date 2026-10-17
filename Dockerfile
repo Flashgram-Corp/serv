@@ -67,7 +67,8 @@ RUN apk add --no-cache ffmpeg openssl \
       /var/lib/telesrv/blobs \
       /var/lib/telesrv/blob-staging \
       /var/lib/telesrv/maptiles \
-      /var/lib/telesrv/livestream
+      /var/lib/telesrv/livestream \
+      /var/lib/telesrv/wallet
 COPY --from=build-server /out/telesrv /usr/local/bin/telesrv
 COPY --chown=telesrv:telesrv data/langpack/ /usr/share/telesrv/langpack/
 USER 10001:10001

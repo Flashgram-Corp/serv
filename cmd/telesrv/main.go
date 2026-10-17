@@ -1875,6 +1875,10 @@ func run(logger *zap.Logger) error {
 		Help: help.NewService(helpStore, helpStore,
 			help.WithMapboxToken(cfg.MapboxToken),
 			help.WithPremiumBotUsername(cfg.PremiumBotUsername),
+			// The wallet is enabled by default; an empty state directory is how an
+			// operator turns it off, and that is exactly when a client must be told
+			// the wallet is unavailable rather than shown an entry that cannot work.
+			help.WithWalletAvailable(cfg.WalletStateDir != ""),
 			help.WithAccountFreezeProvider(adminService)),
 		AppUpdates:                   appUpdateResolver,
 		AccountFreeze:                userProjectionFacts,

@@ -22,6 +22,14 @@ func (r *Router) registerPayments(d *tlprofile.Dispatcher) {
 	registerRPC[*tg.PaymentsCanPurchaseStoreRequest](d, tlprofile.SemanticMethodPaymentsCanPurchaseStore, func(ctx context.Context, req *tg.PaymentsCanPurchaseStoreRequest) (any, error) {
 		return r.onPaymentsCanPurchaseStore(ctx, req)
 	})
+	// telesrv has no fiat exchange-rate feed, so the honest answer is an empty
+	// list. It is still registered deliberately: leaving it out logged an
+	// "Unhandled RPC (compatibility trace)" warning on every call, and clients ask
+	// for it whenever they render a Stars amount in local currency. Erroring was
+	// strictly worse than saying "no rates".
+	registerRPC[*tg.PaymentsGetCurrencyRatesRequest](d, tlprofile.SemanticMethodPaymentsGetCurrencyRates, func(ctx context.Context, _ *tg.PaymentsGetCurrencyRatesRequest) (any, error) {
+		return &tg.PaymentsCurrencyRates{Rates: []tg.CurrencyRate{}}, nil
+	})
 	registerRPC[*tg.PaymentsAssignPlayMarketTransactionRequest](d, tlprofile.SemanticMethodPaymentsAssignPlayMarketTransaction, func(ctx context.Context, req *tg.PaymentsAssignPlayMarketTransactionRequest) (any, error) {
 		return r.onPaymentsAssignPlayMarketTransaction(ctx, req)
 	})

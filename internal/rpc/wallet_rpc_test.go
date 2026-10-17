@@ -22,8 +22,12 @@ import (
 )
 
 type walletRPCFixture struct {
-	calls     int
-	links     []domain.WalletLink
+	calls int
+	links []domain.WalletLink
+	// balance is the ledger balance State reports for a bound wallet. It is a
+	// field rather than a constant because "a wallet with no funds" is a case
+	// worth testing: it is exactly what a freshly created wallet returns.
+	balance   int64
 	created   domain.WalletLink
 	createErr error
 	replaced  bool
@@ -41,7 +45,7 @@ func (f *walletRPCFixture) State(context.Context, int64) (domain.WalletLink, int
 	if len(f.links) == 0 {
 		return domain.WalletLink{}, 0, false, nil
 	}
-	return f.links[0], 4242, true, nil
+	return f.links[0], f.balance, true, nil
 }
 
 func (f *walletRPCFixture) Create(_ context.Context, uid int64, _ [8]byte, allowReplacement bool) (domain.WalletLink, int64, error) {
@@ -209,6 +213,7 @@ func TestWalletStateReportsBindingAndEmpty(t *testing.T) {
 	}
 
 	public := bytes.Repeat([]byte{5}, 32)
+	f.balance = 4242
 	f.links = []domain.WalletLink{{UserID: 42, Address: "EQ-bound", PublicKey: public}}
 	bound, err := r.onWalletState(ctx)
 	if err != nil {
