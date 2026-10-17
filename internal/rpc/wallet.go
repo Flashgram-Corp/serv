@@ -138,6 +138,15 @@ func (r *Router) walletCapabilityUnsupported(ctx context.Context, scope string, 
 	return tgerr.New(400, "WALLET_UNAVAILABLE")
 }
 
+// walletCaller authenticates and rate-limits every wallet method, and is the
+// single choke point they all pass through, which makes it the one place worth
+// logging from: a successful wallet call is otherwise invisible, and the client
+// polls wallet methods without ever producing an error or an unhandled trace.
+// Without this, "the client never asked" and "the client asked and was served"
+// look identical, which is how the TON Connect question got answered wrongly
+// once already.
+//
+// Temporary diagnostic: drop it once the wallet surface is understood.
 func (r *Router) walletCaller(ctx context.Context, scope string, limit int) (int64, [8]byte, error) {
 	uid, ok, err := r.currentUserID(ctx)
 	if err != nil {
@@ -161,6 +170,12 @@ func (r *Router) walletCaller(ctx context.Context, scope string, limit int) (int
 		if !allowed {
 			return 0, key, floodWaitErr(retry)
 		}
+	}
+	if r.log != nil {
+		r.log.Info("wallet rpc",
+			zap.String("scope", scope),
+			zap.Int64("user_id", uid),
+			zap.String("auth_key_id", hex.EncodeToString(key[:])))
 	}
 	return uid, key, nil
 }
@@ -223,7 +238,7 @@ func (r *Router) onWalletReplace(ctx context.Context, req *tg.WalletReplaceWalle
 // never invents an address, and it never advertises backup, phrase export or
 // enable-backup capabilities it does not implement.
 func (r *Router) onWalletState(ctx context.Context) (any, error) {
-	uid, _, err := r.walletCaller(ctx, "state", 60)
+	uid, key, err := r.walletCaller(ctx, "state", 60)
 	if err != nil {
 		return nil, err
 	}
@@ -232,9 +247,63 @@ func (r *Router) onWalletState(ctx context.Context) (any, error) {
 		return nil, walletRPCError(err)
 	}
 	if !ok {
+		link, balance, ok, err = r.provisionWallet(ctx, uid, key)
+		if err != nil {
+			return nil, walletRPCError(err)
+		}
+	}
+	if !ok {
 		return &tg.WalletStateEmpty{}, nil
 	}
 	return &tg.WalletState{Address: link.Address, PublicKey: link.PublicKey, Balance: balance}, nil
+}
+
+// provisionWallet mints the account's wallet the first time it asks for one.
+//
+// This reverses an earlier decision, and deliberately. wallet.getState used to
+// answer walletStateEmpty for an unbound account on the principle that telesrv
+// never invents an address. That is a reasonable-sounding rule that produces a
+// dead end in the client: the Money screen still renders, showing a balance of
+// zero, with no way to create a wallet and nothing behind "Send" or the receive
+// QR -- because there is no address for any of it to refer to. An account that
+// had funds in the ledger could not display them.
+//
+// So the wallet is now custodial and created on first view, which is what the
+// client expects: one keypair per account, sealed under the master key, never
+// leaving the server. The balance becomes readable at the same time, because
+// State() only reads the ledger once a link exists.
+//
+// The returned ok=false path is a real fallback rather than an error: a
+// deployment with no master key cannot hold wallets, and telling such a client
+// "you have no wallet" is exactly the previous behaviour, still true.
+func (r *Router) provisionWallet(ctx context.Context, uid int64, key [8]byte) (domain.WalletLink, int64, bool, error) {
+	if r.deps.Wallet == nil {
+		return domain.WalletLink{}, 0, false, nil
+	}
+	// Create accepts a challenge bound to this account and auth key, so the
+	// challenge has to be issued here rather than expected from the client --
+	// which is exactly the step the client was never taking.
+	if _, err := r.deps.Wallet.GetProofChallenge(ctx, uid, key); err != nil {
+		return domain.WalletLink{}, 0, false, err
+	}
+	link, balance, err := r.deps.Wallet.Create(ctx, uid, key, false)
+	if err != nil {
+		switch {
+		case errors.Is(err, walletapp.ErrWalletCreationDisabled),
+			errors.Is(err, walletapp.ErrWalletKeyFile):
+			// No master key configured: the capability is unavailable, not broken.
+			return domain.WalletLink{}, 0, false, nil
+		case errors.Is(err, domain.ErrWalletProofInvalid):
+			// A concurrent request already consumed the challenge and committed
+			// its own wallet. Re-read rather than mint a second one.
+			if existing, existingBalance, ok, stateErr := r.deps.Wallet.State(ctx, uid); stateErr == nil && ok {
+				return existing, existingBalance, true, nil
+			}
+			return domain.WalletLink{}, 0, false, nil
+		}
+		return domain.WalletLink{}, 0, false, err
+	}
+	return link, balance, true, nil
 }
 
 func (r *Router) onWalletAddresses(ctx context.Context, req *tg.WalletGetUserAddressesRequest) (any, error) {
