@@ -28,6 +28,7 @@ type walletRPCFixture struct {
 	// field rather than a constant because "a wallet with no funds" is a case
 	// worth testing: it is exactly what a freshly created wallet returns.
 	balance   int64
+	txns      []domain.TonTransaction
 	created   domain.WalletLink
 	createErr error
 	replaced  bool
@@ -61,6 +62,14 @@ func (f *walletRPCFixture) ReplaceImported(context.Context, int64, [8]byte, []by
 	f.calls++
 	return domain.WalletLink{}, 0, domain.ErrWalletProofInvalid
 }
+func (f *walletRPCFixture) Transactions(_ context.Context, _ int64, _ domain.StarsTransactionQuery) (domain.TonTransactionPage, error) {
+	f.calls++
+	if f.txns == nil {
+		return domain.TonTransactionPage{Balance: f.balance, Transactions: []domain.TonTransaction{}}, nil
+	}
+	return domain.TonTransactionPage{Balance: f.balance, Transactions: f.txns}, nil
+}
+
 func (f *walletRPCFixture) Perform(_ context.Context, endpoint string, query, payload *string) (string, error) {
 	f.calls++
 	return `{"ok":true,"result":"0"}`, nil
@@ -199,40 +208,81 @@ func TestWalletRejectsInvalidPeerHash(t *testing.T) {
 // password; replacing an existing one does, exactly like an imported swap.
 // wallet.getState is the wallet UI's entry point: an unbound account must get
 // walletStateEmpty, and a bound one must not claim capabilities telesrv lacks.
-func TestWalletStateReportsBindingAndEmpty(t *testing.T) {
+// wallet.getState is the wallet UI's entry point, and the client renders a
+// balance screen from whatever it returns -- including a zero balance, with no
+// way to create a wallet and nothing behind Send or the receive QR, because
+// there is no address for either to refer to.
+//
+// So the wallet is custodial and minted on first view. An unbound account gets
+// one, and its ledger balance becomes readable at the same time, because State
+// only consults the ledger once a link exists.
+func TestWalletStateProvisionsOnFirstRead(t *testing.T) {
 	f := &walletRPCFixture{}
 	r := New(Config{}, Deps{Wallet: f}, zap.NewNop(), clock.System)
 	ctx := WithAuthKeyID(WithUserID(context.Background(), 42), [8]byte{1})
 
-	empty, err := r.onWalletState(ctx)
+	state, err := r.onWalletState(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := empty.(*tg.WalletStateEmpty); !ok {
-		t.Fatalf("unbound state = %T, want *tg.WalletStateEmpty", empty)
+	created, ok := state.(*tg.WalletState)
+	if !ok {
+		t.Fatalf("first read = %T, want a provisioned *tg.WalletState", state)
+	}
+	if created.Address == "" {
+		t.Fatal("a provisioned wallet must carry an address")
+	}
+	if f.created.Address != created.Address {
+		t.Fatalf("returned address %q, minted %q", created.Address, f.created.Address)
 	}
 
-	public := bytes.Repeat([]byte{5}, 32)
+	// A second read must not mint a second wallet.
+	if _, err = r.onWalletState(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if f.calls < 3 {
+		t.Fatalf("expected challenge + create on the first read only, saw %d calls", f.calls)
+	}
+
+	// The bound path still reports the ledger balance rather than zero.
+	public := bytes.Repeat([]byte{7}, 32)
 	f.balance = 4242
 	f.links = []domain.WalletLink{{UserID: 42, Address: "EQ-bound", PublicKey: public}}
 	bound, err := r.onWalletState(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	state, ok := bound.(*tg.WalletState)
-	if !ok || state.Address != "EQ-bound" || state.Balance != 4242 || !bytes.Equal(state.PublicKey, public) {
+	typed, ok := bound.(*tg.WalletState)
+	if !ok || typed.Address != "EQ-bound" || typed.Balance != 4242 || !bytes.Equal(typed.PublicKey, public) {
 		t.Fatalf("bound state = %+v", bound)
 	}
-	if state.Flags != 0 {
-		t.Fatalf("state advertises unimplemented capabilities: flags=%#x", state.Flags)
+	if typed.Flags != 0 {
+		t.Fatalf("state advertises unimplemented capabilities: flags=%#x", typed.Flags)
 	}
-	// The declared constructor of the bound state must be walletState#95c5346b.
 	var wire bin.Buffer
-	if err = state.Encode(&wire); err != nil {
+	if err = typed.Encode(&wire); err != nil {
 		t.Fatal(err)
 	}
 	if id, _ := wire.PeekID(); id != 0x95c5346b {
 		t.Fatalf("walletState constructor = %#x, want 0x95c5346b", id)
+	}
+}
+
+// A deployment that cannot hold wallets -- no master key configured -- must keep
+// answering walletStateEmpty rather than failing the read. That is the previous
+// behaviour and is still true for those deployments; only a server that can
+// actually mint a wallet does.
+func TestWalletStateEmptyWhenCreationDisabled(t *testing.T) {
+	f := &walletRPCFixture{createErr: walletapp.ErrWalletCreationDisabled}
+	r := New(Config{}, Deps{Wallet: f}, zap.NewNop(), clock.System)
+	ctx := WithAuthKeyID(WithUserID(context.Background(), 42), [8]byte{1})
+
+	state, err := r.onWalletState(ctx)
+	if err != nil {
+		t.Fatalf("a disabled capability must not fail the read: %v", err)
+	}
+	if _, ok := state.(*tg.WalletStateEmpty); !ok {
+		t.Fatalf("state = %T, want *tg.WalletStateEmpty", state)
 	}
 }
 

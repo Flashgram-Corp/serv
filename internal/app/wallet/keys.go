@@ -1,6 +1,7 @@
 package wallet
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -51,7 +52,31 @@ func LoadOrCreateKeyCipher(path string) (*KeyCipher, error) {
 	} else if info.Mode().Perm()&0077 != 0 {
 		return nil, fmt.Errorf("%w: %s must have mode 0600", ErrWalletKeyFile, path)
 	}
-	return newKeyCipher(raw)
+	return newKeyCipher(decodeKeyFile(path, raw))
+}
+
+// decodeKeyFile turns what is on disk back into the 32 raw bytes newKeyCipher
+// wants.
+//
+// writeKeyFile persists the key hex-encoded with a trailing newline, so the file
+// is 65 bytes and reading it straight into newKeyCipher made the wallet work on
+// first boot -- where the freshly generated in-memory key was still in hand --
+// and fail on every boot after it, because 65 != 32. The failure looked like a
+// corrupt key file rather than an encoding mismatch, which is what made it worth
+// a round-trip test rather than a hand check.
+//
+// Both encodings are accepted: the hex form this build writes, and the bare 32
+// bytes an earlier build could have left behind, so an existing deployment is
+// repaired in place instead of needing its key rotated. Rotating would orphan
+// every wallet already sealed under the old key.
+func decodeKeyFile(path string, raw []byte) []byte {
+	trimmed := bytes.TrimRight(raw, "\n")
+	if len(trimmed) == hex.EncodedLen(32) {
+		if decoded, err := hex.DecodeString(string(trimmed)); err == nil {
+			return decoded
+		}
+	}
+	return raw
 }
 
 func writeKeyFile(path string, raw []byte) error {

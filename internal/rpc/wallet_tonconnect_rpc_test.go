@@ -60,9 +60,7 @@ func TestWalletTonConnectAndCurrencyRatesDoNotTrace(t *testing.T) {
 		{"sessions", &tg.WalletTonConnectGetSessionsRequest{}, ""},
 		{"nextEventID", &tg.WalletTonConnectNextEventIDRequest{}, ""},
 		{"currencyRates", &tg.PaymentsGetCurrencyRatesRequest{}, ""},
-		// Gasless refuses: an empty Updates vector would read as "I run a gasless
-		// system and nothing is pending", which telesrv cannot back.
-		{"gasless", &tg.WalletGetGaslessInfoRequest{}, "WALLET_UNAVAILABLE"},
+		{"gasless", &tg.WalletGetGaslessInfoRequest{}, ""},
 		{"createSession", &tg.WalletTonConnectCreateSessionRequest{}, "WALLET_UNAVAILABLE"},
 		{"registerKey", &tg.WalletTonConnectRegisterKeyRequest{}, "WALLET_UNAVAILABLE"},
 		{"getPending", &tg.WalletTonConnectGetPendingRequest{}, "WALLET_UNAVAILABLE"},
@@ -129,13 +127,22 @@ func TestWalletTonConnectEmptyAnswersAreNotNil(t *testing.T) {
 		t.Fatalf("sessions = %#v, want none", typed.Sessions)
 	}
 
+	// Currency rates are the exception to the "empty means none" rule. The client
+	// calls this on every Money-screen open -- 434 times in the journal, more than
+	// any other payments method -- and renders the fiat amount beside the balance
+	// from the answer. An empty vector is not "no rates to quote", it is "this
+	// server has no rates", and the client duly showed a real balance with no USD
+	// next to it. So the rate is reported, from the same constant appConfig uses.
 	rates := dispatchWallet230(t, r, &tg.PaymentsGetCurrencyRatesRequest{})
 	typedRates, ok := rates.(*tg.PaymentsCurrencyRates)
 	if !ok {
 		t.Fatalf("rates = %T, want *tg.PaymentsCurrencyRates", rates)
 	}
-	if len(typedRates.Rates) != 0 {
-		t.Fatalf("rates = %#v, want none", typedRates.Rates)
+	if len(typedRates.Rates) != 1 {
+		t.Fatalf("rates = %#v, want exactly one USD rate", typedRates.Rates)
+	}
+	if typedRates.Rates[0].Currency != "USD" || typedRates.Rates[0].Rate != domain.TonUSDRate {
+		t.Fatalf("rate = %#v, want USD at %v", typedRates.Rates[0], domain.TonUSDRate)
 	}
 }
 
