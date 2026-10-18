@@ -706,3 +706,19 @@ active key。不要手工编辑 manifest 或 PEM，不要在各实例上分别�
 ## Cross-collection gift crafting
 
 `TELESRV_STAR_GIFT_CROSS_CRAFT_USER_IDS` is an explicit comma-separated positive user-ID allowlist; empty disables AI cross-collection crafting. A configured AI provider and blob backend are required. Ordinary same-collection catalog crafting remains available.
+
+## 可选钱包与充值能力
+
+`TELESRV_WALLET_STATE_DIR` 默认留空，关闭钱包。显式配置 POSIX 0700 私有目录后
+启用 Layer 230 部分钱包接口；Docker 应使用 `/var/lib/telesrv/wallet`。
+`TELESRV_WALLET_KEY_FILE` 默认为 `data/wallet/keys.key`，Docker 默认位于同一持久
+卷的 wallet/keys.key。主密钥与完整账号状态必须共同备份；首次生成 0600 文件，
+重启校验已有密文与配置密钥一致，不推断没有存量证据的 raw-key 编码。
+可选 `TELESRV_WALLET_TONCENTER_API_KEY` 要求已配置目录；留空不访问外部 TON。
+余额/流水来自本服 nanoton 账本，不代表链上到账；链上发送、gasless、备份/导出和
+TON Connect 会话尚未实现，开启目录不等于开启这些能力。
+
+`TELESRV_DONATIONS_ENABLED=false` 默认禁止生成 donations 助记词和启动链监听。
+已有使用该功能的部署升级前须显式设为 true 并启用/配置所需链。donations 加密密钥
+与钱包主密钥是不同文件。新纯数据迁移关闭空/种子占位 RPC 链，保留已配置远端链。
+关闭总开关不删除已存在的钱包、地址或充值记录。

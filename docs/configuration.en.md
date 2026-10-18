@@ -799,3 +799,25 @@ At minimum, production operators should explicitly review and override the devel
 ## Cross-collection gift crafting
 
 `TELESRV_STAR_GIFT_CROSS_CRAFT_USER_IDS` is an explicit comma-separated positive user-ID allowlist; empty disables AI cross-collection crafting. A configured AI provider and blob backend are required. Ordinary same-collection catalog crafting remains available.
+
+## Optional wallet and donations capabilities
+
+`TELESRV_WALLET_STATE_DIR` defaults to empty (disabled). Set a private POSIX
+0700 directory to enable the partial Layer 230 wallet. In Docker choose
+`/var/lib/telesrv/wallet`; keep `TELESRV_WALLET_KEY_FILE` (default
+`data/wallet/keys.key`, Docker `/var/lib/telesrv/wallet/keys.key`) backed up
+with all account state. Missing files are created 0600, persisted custody keys
+are verified against the configured cipher on startup. No raw legacy key
+encoding is inferred. `TELESRV_WALLET_TONCENTER_API_KEY` is optional and requires
+an enabled state directory. Empty means no external TON provider connection.
+Balances/history come from this server's local nanoton ledger. Chain sending,
+gasless, wallet backup/export and TON Connect sessions remain unimplemented;
+this setting does not make them available.
+
+`TELESRV_DONATIONS_ENABLED=false` disables provisioning of the donations seed
+and all chain watchers. Existing deployments must explicitly set it to true
+and enable/configure the desired chain to continue that feature after upgrade.
+The donations encryption key and wallet master key are distinct secrets.
+The new data-only migration disables chains with empty or seeded placeholder
+RPC endpoints and preserves configured remote endpoints. Turning the master
+flag off does not delete existing wallet/deposit facts.

@@ -1792,7 +1792,7 @@ func run(logger *zap.Logger) error {
 	} else {
 		logger.Info("会话地理归属未启用：account.getAuthorizations 继续回传 Unknown 占位文案")
 	}
-	// Layer 230 应用内 TON 钱包。默认启用:挑战/绑定状态只在本地 data/wallet,
+	// Layer 230 应用内 TON 钱包。显式配置启用:挑战/绑定状态只在本地 data/wallet,
 	// 余额来自 telesrv 自己的 TON 账本。provider(toncenter)默认不配置,因此
 	// toncenter.* 与余额查询都不会联系任何外部 TON 节点。
 	var walletService rpc.WalletService
@@ -1811,6 +1811,9 @@ func run(logger *zap.Logger) error {
 		walletKeys, err := walletapp.LoadOrCreateKeyCipher(cfg.WalletKeyFile)
 		if err != nil {
 			return fmt.Errorf("load wallet master key: %w", err)
+		}
+		if err := walletStore.ValidateKeyCipher(walletKeys); err != nil {
+			return fmt.Errorf("validate wallet custody keys: %w", err)
 		}
 		walletService = walletapp.NewService(walletStore, walletProvider, cfg.AdvertiseIP,
 			walletapp.WithBalanceSource(walletapp.TONLedgerBalanceSource(starGiftLifecycleStore.TonBalance)),
@@ -1876,10 +1879,10 @@ func run(logger *zap.Logger) error {
 		Help: help.NewService(helpStore, helpStore,
 			help.WithMapboxToken(cfg.MapboxToken),
 			help.WithPremiumBotUsername(cfg.PremiumBotUsername),
-			// The wallet is enabled by default; an empty state directory is how an
+			// The wallet requires an explicit state directory; an empty directory is how an
 			// operator turns it off, and that is exactly when a client must be told
 			// the wallet is unavailable rather than shown an entry that cannot work.
-			help.WithWalletAvailable(cfg.WalletStateDir != ""),
+			help.WithWalletAvailable(walletService != nil),
 			help.WithAccountFreezeProvider(adminService)),
 		AppUpdates:                   appUpdateResolver,
 		AccountFreeze:                userProjectionFacts,

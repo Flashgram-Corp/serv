@@ -1036,7 +1036,7 @@ func Load() (Config, error) {
 		TelegramLoginRetention:                envDurationOr("TELESRV_TELEGRAM_LOGIN_RETENTION", 7*24*time.Hour),
 		TelegramLoginSweepInterval:            envDurationOr("TELESRV_TELEGRAM_LOGIN_SWEEP_INTERVAL", 5*time.Minute),
 		TelegramLoginSweepBatch:               envIntOr("TELESRV_TELEGRAM_LOGIN_SWEEP_BATCH", 500),
-		WalletStateDir:                        strings.TrimSpace(envAllowEmptyOr("TELESRV_WALLET_STATE_DIR", "data/wallet")),
+		WalletStateDir:                        strings.TrimSpace(envAllowEmptyOr("TELESRV_WALLET_STATE_DIR", "")),
 		WalletKeyFile:                         envOr("TELESRV_WALLET_KEY_FILE", "data/wallet/keys.key"),
 		WalletToncenterAPIKey:                 strings.TrimSpace(envAllowEmptyOr("TELESRV_WALLET_TONCENTER_API_KEY", "")),
 		AdminUIPermissions:                    envListOr("TELESRV_ADMIN_UI_PERMISSIONS", []string{adminPermissionAll}),
