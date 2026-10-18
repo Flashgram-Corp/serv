@@ -726,6 +726,16 @@ type Config struct {
 	// message send, so delivery cadence is a worker property.
 	VerificationNotifyInterval time.Duration
 	VerificationNotifyBatch    int
+	// ScamProfileWarning / FakeProfileWarning are the first line the server
+	// prepends to a peer's About in getFullUser / channels.getFullChannel and
+	// the chat-invite preview after an admin flags the peer SCAM/FAKE. Official
+	// clients render their own localized badge from the flag, but the badge is
+	// easy to miss; this text makes the mark part of the description itself,
+	// shown above the owner's own text. Empty keeps built-in English defaults
+	// (domain.ModerationProfileWarning). The stored description is never
+	// rewritten -- the warning lives only in the read projection.
+	ScamProfileWarning string
+	FakeProfileWarning string
 	// Broadcast worker enumerates all-user campaigns and delivers claimed
 	// recipients in bounded batches. Lease permits another instance to recover a
 	// claim after a crash; it is not a message timeout.
@@ -1304,6 +1314,10 @@ func Load() (Config, error) {
 		VerificationBotRateWindow:    envDurationOr("TELESRV_VERIFICATION_BOT_RATE_WINDOW", time.Minute),
 		VerificationNotifyInterval:   envDurationOr("TELESRV_VERIFICATION_NOTIFY_INTERVAL", 15*time.Second),
 		VerificationNotifyBatch:      envIntOr("TELESRV_VERIFICATION_NOTIFY_BATCH", 50),
+		// Empty keeps the built-in English defaults: domain trims and falls
+		// back when the stored text is blank (domain.SetModerationProfileWarning).
+		ScamProfileWarning: envOr("TELESRV_SCAM_WARNING", ""),
+		FakeProfileWarning: envOr("TELESRV_FAKE_WARNING", ""),
 		BroadcastWorkerInterval:      envDurationOr("TELESRV_BROADCAST_WORKER_INTERVAL", 3*time.Second),
 		BroadcastWorkerLease:         envDurationOr("TELESRV_BROADCAST_WORKER_LEASE", 30*time.Second),
 		BroadcastMaterializeBatch:    envIntOr("TELESRV_BROADCAST_MATERIALIZE_BATCH", 200),
@@ -2244,11 +2258,7 @@ func defaultAIProviderAPIKey(env envSource, name string) string {
 type envSource map[string]string
 
 func loadConfigEnv() (envSource, error) {
-	path, explicit := os.LookupEnv("TELESRV_CONFIG")
-	if !explicit {
-		path = defaultConfigFile
-	}
-	path = strings.TrimSpace(path)
+	path, explicit := configFilePath()
 	if path == "" {
 		return nil, nil
 	}
@@ -2260,6 +2270,18 @@ func loadConfigEnv() (envSource, error) {
 		return nil, fmt.Errorf("config file %q: %w", path, err)
 	}
 	return env, nil
+}
+
+// configFilePath 解析配置文件路径：TELESRV_CONFIG 显式指定，否则用默认 .env；
+// 返回值同时报告该路径是否为显式指定（显式路径缺失是硬错误，缺省缺失则回落到
+// 纯进程环境）。TrimSpace 后为空表示调用方应跳过文件读取。EnvDrift 用同一规则
+// 定位被比对的文件，避免两处口径不一致。
+func configFilePath() (path string, explicit bool) {
+	path, explicit = os.LookupEnv("TELESRV_CONFIG")
+	if !explicit {
+		path = defaultConfigFile
+	}
+	return strings.TrimSpace(path), explicit
 }
 
 func readEnvFile(path string) (envSource, error) {
