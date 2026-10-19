@@ -121,6 +121,7 @@ export const navSections: NavSection[] = [
     icon: Gift,
     tabs: [
       { path: "/gifts", labelKey: "gifts.pageTitle", permission: permissionGiftsRead },
+      { path: "/give-gifts", labelKey: "layout.giveGifts", permission: permissionGiftsRead },
       { path: "/auctions", labelKey: "layout.auctions", permission: permissionGiftsRead }
     ]
   },
@@ -131,7 +132,6 @@ export const navSections: NavSection[] = [
     tabs: [
       { path: "/monetization", labelKey: "layout.premium", permission: permissionPremiumManage },
       { path: "/star-issue", labelKey: "layout.starIssue", permission: permissionPremiumManage },
-      { path: "/give-gifts", labelKey: "layout.giveGifts", permission: permissionGiftsRead },
       { path: "/prices", labelKey: "layout.prices", permission: permissionPricesManage },
       { path: "/stars", labelKey: "layout.stars", permission: permissionStarsRead }
     ]

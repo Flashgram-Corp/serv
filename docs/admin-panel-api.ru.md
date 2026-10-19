@@ -217,10 +217,10 @@ URL по-прежнему приводит туда, а не в 404 по зак�
 | Verification | Official | `/verification` | `verification.review` |
 | Verification | Third-party | `/bot-verification` | `botverification.review` |
 | Gifts | Star Gift Catalog | `/gifts` | `gifts.read` |
+| Gifts | Give Gifts | `/give-gifts` | `gifts.read` |
 | Gifts | Auctions & Drops | `/auctions` | `gifts.read` |
 | Commerce | Stars & Premium | `/monetization` | `premium.manage` |
 | Commerce | Giveaway | `/star-issue` | `premium.manage` |
-| Commerce | Gifts | `/give-gifts` | `gifts.read` |
 | Commerce | Prices | `/prices` | `prices.manage` |
 | Commerce | Stars | `/stars` | `stars.read` |
 | NFT Items | NFT Usernames | `/collectible-usernames` | `usernames.read` |
