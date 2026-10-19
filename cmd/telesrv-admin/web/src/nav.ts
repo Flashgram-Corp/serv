@@ -130,8 +130,15 @@ export const navSections: NavSection[] = [
     labelKey: "layout.commerce",
     icon: BadgeDollarSign,
     tabs: [
-      { path: "/monetization", labelKey: "layout.premium", permission: permissionPremiumManage },
-      { path: "/star-issue", labelKey: "layout.starIssue", permission: permissionPremiumManage },
+      // The giveaway used to be a tab of its own: it is a single button, and a
+      // section tab is supposed to be a job. It lives on the Stars & Premium
+      // page next to the per-user grants now, and the old URL still opens it.
+      {
+        path: "/monetization",
+        labelKey: "layout.premium",
+        permission: permissionPremiumManage,
+        aliases: ["/star-issue"]
+      },
       { path: "/prices", labelKey: "layout.prices", permission: permissionPricesManage },
       { path: "/stars", labelKey: "layout.stars", permission: permissionStarsRead }
     ]

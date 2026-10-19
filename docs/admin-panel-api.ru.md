@@ -219,10 +219,9 @@ URL по-прежнему приводит туда, а не в 404 по зак�
 | Gifts | Star Gift Catalog | `/gifts` | `gifts.read` |
 | Gifts | Give Gifts | `/give-gifts` | `gifts.read` |
 | Gifts | Auctions & Drops | `/auctions` | `gifts.read` |
-| Commerce | Stars & Premium | `/monetization` | `premium.manage` |
-| Commerce | Giveaway | `/star-issue` | `premium.manage` |
+| Commerce | Stars & Premium | `/monetization` | `premium.manage` (also served at `/star-issue`) |
 | Commerce | Prices | `/prices` | `prices.manage` |
-| Commerce | Stars | `/stars` | `stars.read` |
+| Commerce | Stars balances | `/stars` | `stars.read` |
 | NFT Items | NFT Usernames | `/collectible-usernames` | `usernames.read` |
 | NFT Items | NFT Numbers | `/collectible-phones` | `phones.read` |
 | NFT Items | NFT Gifts | `/nft-gifts` | `gifts.read` |
@@ -231,7 +230,7 @@ URL по-прежнему приводит туда, а не в 404 по зак�
 | Media | GIFs | `/gif-catalog` | `content.read` |
 | Media | Storage | `/storage` | `storage.read` |
 | Broadcasts | Broadcasts | `/broadcasts` | `broadcasts.read` |
-| Messages | Private | `/messages/private` | `messages.read` (also served at the bare alias) |
+| Messages | Private | `/messages/private` | `messages.read` (also served at `/messages`) |
 | Messages | Groups | `/messages/groups` | `messages.read` |
 | Reports | Reports | `/moderation` | `moderation.review` |
 | Donations | Donations | `/donations` | `donations.manage` |
