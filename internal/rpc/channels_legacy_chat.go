@@ -271,8 +271,10 @@ func (r *Router) onMessagesEditChatAbout(ctx context.Context, req *tg.MessagesEd
 	channel, err := r.deps.Channels.EditAbout(ctx, userID, domain.EditChannelAboutRequest{
 		UserID:    userID,
 		ChannelID: channelID,
-		About:     req.About,
-		Date:      int(r.clock.Now().Unix()),
+		// 客户端把 profile 里读到的描述原样发回（含服务端注入的警告首行），
+		// 写入前剪掉，否则每次保存都会把警告再叠一行。
+		About: domain.StripProfileWarning(req.About),
+		Date:  int(r.clock.Now().Unix()),
 	})
 	if err != nil {
 		return false, channelAdminErr(err)

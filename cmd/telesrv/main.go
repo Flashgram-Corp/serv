@@ -597,11 +597,42 @@ func webPagePreviewOption(cfg config.Config) filesapp.Option {
 	return filesapp.WithWebPagePreview(cfg.WebPagePreviewMaxBytes, cfg.WebPagePreviewRatePerMin)
 }
 
+// logConfigDrift 在启动时比对 .env 与 .env.example，只报告、不改写：
+//
+//   - INFO「模板里声明、但本机没设」——多半是刻意走默认值，但「新版本加了配置、
+//     .env 还是旧的」这类遗漏也在这里，所以给个可核对的清单；
+//   - WARN「.env 里有、模板没收录」——几乎必然是键名笔误或模板滞后：readEnvFile
+//     接受任意 TELESRV_* 键名，而 Load 只查询认识的键，笔误值会被静默忽略。
+//
+// 模板缺失（生产镜像不带 .env.example）时 DetectEnvDrift 返回零值，静默跳过。
+// 刻意不自动补写 .env：容器是 read-only rootfs，且静默改运维的配置文件比漏报更糟。
+func logConfigDrift(logger *zap.Logger) {
+	drift, err := config.DetectEnvDrift()
+	if err != nil {
+		logger.Warn("配置漂移比对失败（不影响启动）", zap.Error(err))
+		return
+	}
+	if len(drift.Missing) == 0 && len(drift.Unknown) == 0 {
+		return
+	}
+	if len(drift.Missing) > 0 {
+		logger.Info(".env.example 声明但本机未设置，正使用代码默认值",
+			zap.Int("count", len(drift.Missing)),
+			zap.Strings("keys", drift.Missing))
+	}
+	if len(drift.Unknown) > 0 {
+		logger.Warn(".env 中的键未被 .env.example 收录：可能是键名笔误或模板滞后，笔误值会被静默忽略",
+			zap.Int("count", len(drift.Unknown)),
+			zap.Strings("keys", drift.Unknown))
+	}
+}
+
 func run(logger *zap.Logger) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+	logConfigDrift(logger)
 	if err := branding.Configure(cfg.Branding); err != nil {
 		return fmt.Errorf("configure branding: %w", err)
 	}
@@ -611,6 +642,9 @@ func run(logger *zap.Logger) error {
 	if !domain.ConfigurePremiumBotUsername(cfg.PremiumBotUsername) {
 		return fmt.Errorf("configure Premium bot username %q", cfg.PremiumBotUsername)
 	}
+	// SCAM/FAKE 警告文案（空白 → domain 内置英文默认值）：启动时写入一次，
+	// getFullUser / channels.getFullChannel / 邀请预览的 About 投影都会读取。
+	domain.SetModerationProfileWarning(cfg.ScamProfileWarning, cfg.FakeProfileWarning)
 	// 服务器身份由管理面板（Server Settings → Server identity）在
 	// cfg.IdentityDir 下维护；这里启动时读取一次自定义服务器名，用作 777000 官方
 	// 系统账号的展示名与登录通知 {{server_name}} 占位符（见
