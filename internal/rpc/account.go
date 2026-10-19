@@ -1560,9 +1560,6 @@ func (r *Router) onAccountUpdateProfile(ctx context.Context, req *tg.AccountUpda
 	firstName, hasFirstName := req.GetFirstName()
 	lastName, hasLastName := req.GetLastName()
 	about, hasAbout := req.GetAbout()
-	// 客户端的 bio 编辑器把它在 profile 里读到的 About 原样发回，其中包含服务端
-	// 注入的 SCAM/FAKE 警告首行；不剔除就会存进数据库并逐次叠加，所以写入前剪掉。
-	about = domain.StripProfileWarning(about)
 	u, err := svc.UpdateProfile(ctx, userID, domain.UserProfileUpdate{
 		FirstName:    firstName,
 		HasFirstName: hasFirstName,

@@ -18,6 +18,17 @@ This document describes every setting loaded by `internal/config`. Defaults and 
 - Invalid integer, float, boolean, or duration text falls back to the code default. URL, app-scheme, app-name, and login-email dependency validation fails startup instead.
 - Never commit real passwords, tokens, private DSNs, or TURN secrets. Prefer a secret manager or protected service environment in production.
 
+At startup, when `<config file>.example` is available, the server reports template keys absent from both the config file and process environment at INFO and file keys absent from the template at WARN. The report contains key names only and never writes configuration files. A missing template skips this advisory comparison.
+
+### Profile moderation warnings
+
+| Setting | Type / code default | Description |
+|---|---|---|
+| `TELESRV_SCAM_WARNING` | string / built-in English fraud warning | Prefix for SCAM peers in readable user/channel About fields and non-member invite previews. Empty or whitespace selects the built-in text. |
+| `TELESRV_FAKE_WARNING` | string / built-in English impersonation warning | Equivalent prefix for FAKE peers. SCAM takes precedence if both flags are present. |
+
+About privacy hides the entire user About projection, including the warning. A user's own view and channel creators/admins with ChangeInfo receive the stored description used by the editor. Warning text is never persisted or stripped from author input; flag badges remain available to clients. Changes require restart.
+
 ## 2. MTProto listener, transport, and resource budgets
 
 | Setting | Type / code default | Description and constraints |

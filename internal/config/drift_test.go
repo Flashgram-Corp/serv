@@ -128,6 +128,20 @@ func TestDetectEnvDriftIgnoresNonFieldLines(t *testing.T) {
 	}
 }
 
+func TestDetectEnvDriftAcceptsConfigKeySyntaxWithoutLoggingValues(t *testing.T) {
+	cfgPath, examplePath := writeDriftFiles(t,
+		"export TELESRV_ALPHA = a-secret\n# export TELESRV_OPTIONAL = example-secret\nTELESRV_BETA=template-secret\n",
+		"export TELESRV_ALPHA = actual-secret\nTELESRV_TYPO=another-secret\n")
+	drift, err := envDriftAt(cfgPath, examplePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(drift.Missing, []string{"TELESRV_OPTIONAL", "TELESRV_BETA"}) ||
+		!reflect.DeepEqual(drift.Unknown, []string{"TELESRV_TYPO"}) {
+		t.Fatalf("unexpected drift: %+v", drift)
+	}
+}
+
 // TestRepoEnvExampleParses 验证仓库根真实 .env.example 能被漂移比对完整解析：
 // 分组头、说明注释、占位行都不得被当成字段，且必须解析出文档规模的一批字段键。
 // （方向「模板里有、代码没人读」涉及动态键与外置二进制，不在此守。）

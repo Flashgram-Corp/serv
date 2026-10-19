@@ -6,9 +6,12 @@ import (
 	"testing"
 
 	"github.com/iamxvbaba/td/clock"
+	"github.com/iamxvbaba/td/tg"
 	"go.uber.org/zap/zaptest"
 
+	appusers "telesrv/internal/app/users"
 	"telesrv/internal/domain"
+	"telesrv/internal/store/memory"
 )
 
 // getFullUser 里 SCAM/FAKE 账号的描述首行必须是服务端警告，其后才是 owner
@@ -83,10 +86,69 @@ func TestBuildUserFullProjectionModerationWarningFollowsAboutPrivacy(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if full.About != domain.ModerationProfileWarning(true, false, "") {
-		t.Fatalf("about = %q, want the warning without the hidden owner text", full.About)
+	if full.About != "" {
+		t.Fatalf("about = %q, want About privacy to hide the entire projection", full.About)
 	}
 	if strings.Contains(full.About, "мое описание") {
 		t.Fatalf("about = %q, must not leak the hidden owner text", full.About)
+	}
+}
+
+func TestProfileWarningDoesNotRewriteAuthorTextOnSave(t *testing.T) {
+	domain.SetModerationProfileWarning("NOTICE", "IMPERSONATION")
+	t.Cleanup(func() { domain.SetModerationProfileWarning("", "") })
+	for _, flagged := range []bool{false, true} {
+		ctx := context.Background()
+		store := memory.NewUserStore()
+		owner, err := store.Create(ctx, domain.User{AccessHash: 1, Phone: "15550001260", FirstName: "Owner", Scam: flagged})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := New(Config{}, Deps{Users: appusers.NewService(store)}, zaptest.NewLogger(t), clock.System)
+		ctx = WithUserID(ctx, owner.ID)
+		about := "NOTICE\nmy own quotation"
+		for range 2 {
+			req := &tg.AccountUpdateProfileRequest{}
+			req.SetAbout(about)
+			if _, err := r.onAccountUpdateProfile(ctx, req); err != nil {
+				t.Fatal(err)
+			}
+			full, err := r.onUsersGetFullUser(ctx, &tg.InputUserSelf{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if full.FullUser.About != about {
+				t.Fatalf("scam=%v saved about=%q, want %q", flagged, full.FullUser.About, about)
+			}
+		}
+	}
+}
+
+func TestChannelProfileWarningKeepsEditorSourceAndViewerWarning(t *testing.T) {
+	about := strings.Repeat("x", maxChannelAboutLength)
+	channel := domain.Channel{ID: 1, Scam: true, About: about}
+	for _, test := range []struct {
+		name   string
+		self   domain.ChannelMember
+		editor bool
+	}{
+		{"creator", domain.ChannelMember{Role: domain.ChannelRoleCreator}, true},
+		{"metadata admin", domain.ChannelMember{Role: domain.ChannelRoleAdmin, AdminRights: domain.ChannelAdminRights{ChangeInfo: true}}, true},
+		{"other admin", domain.ChannelMember{Role: domain.ChannelRoleAdmin}, false},
+		{"reader", domain.ChannelMember{Role: domain.ChannelRoleMember}, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			full := tgChannelFull(domain.ChannelView{Channel: channel, Self: test.self})
+			want := domain.ModerationProfileWarning(true, false, about)
+			if test.editor {
+				want = about
+			}
+			if full.About != want {
+				t.Fatalf("about=%q, want %q", full.About, want)
+			}
+			if channel.About != about {
+				t.Fatal("projection changed stored description")
+			}
+		})
 	}
 }

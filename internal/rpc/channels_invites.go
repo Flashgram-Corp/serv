@@ -67,12 +67,12 @@ func (r *Router) onMessagesCheckChatInvite(ctx context.Context, hash string) (tg
 		return &tg.ChatInviteAlready{Chat: chat}, nil
 	}
 	invite := &tg.ChatInvite{
-		Channel:           true,
-		Broadcast:         res.Channel.Broadcast,
-		Megagroup:         res.Channel.Megagroup,
-		Public:            res.Channel.Username != "",
-		RequestNeeded:     res.Invite.RequestNeeded,
-		Title:             res.Channel.Title,
+		Channel:       true,
+		Broadcast:     res.Channel.Broadcast,
+		Megagroup:     res.Channel.Megagroup,
+		Public:        res.Channel.Username != "",
+		RequestNeeded: res.Invite.RequestNeeded,
+		Title:         res.Channel.Title,
 		// Same server-authored SCAM/FAKE line the full-channel projection
 		// carries, so the mark is visible before the viewer joins -- this
 		// preview is all a non-member gets (see the flag comment below).

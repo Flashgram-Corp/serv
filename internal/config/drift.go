@@ -24,8 +24,8 @@ import (
 var (
 	// driftActiveKeyRe / driftCommentedKeyRe 与 procctl 的字段正则同义：模板里
 	// 的字段行要么是激活的 `K=V`，要么是注释掉的可选字段 `# K=V`。
-	driftActiveKeyRe    = regexp.MustCompile(`^(TELESRV_[A-Z0-9_]+)=`)
-	driftCommentedKeyRe = regexp.MustCompile(`^#\s*(TELESRV_[A-Z0-9_]+)=`)
+	driftActiveKeyRe    = regexp.MustCompile(`^(?:export\s+)?(TELESRV_[A-Z0-9_]+)\s*=`)
+	driftCommentedKeyRe = regexp.MustCompile(`^#\s*(?:export\s+)?(TELESRV_[A-Z0-9_]+)\s*=`)
 )
 
 // EnvDrift 是 .env 相对 .env.example 的差异报告，键保持模板/文件各自的出现顺序。
