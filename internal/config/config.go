@@ -48,6 +48,11 @@ type Config struct {
 	// partitioning auth keys, sessions, or business state. See
 	// mtprotoedge.Options.StrictDC for the optional strict behavior.
 	StrictDCCheck bool
+	// CheckNumberFormat 开启严格的手机号格式校验：国家码必须真实存在，
+	// 且号段必须已分配。默认关闭——此时只要显式写成国际号（带 +）且位数在
+	// 4-32 之间就接受，短号段（如 +7 123）和未分配号段（如 +1488）都能登录；
+	// 关闭时也依旧拒绝缺少国家码的本地号（如 09981679461）。
+	CheckNumberFormat bool
 	// MTProtoMaxConnections / PerIP 覆盖 raw Accept、codec sniff、握手到认证 session
 	// 的完整物理连接生命周期；负数关闭对应 admission 上限。
 	MTProtoMaxConnections      int
@@ -977,6 +982,7 @@ func Load() (Config, error) {
 		DC:                                envIntOr("TELESRV_DC", 2),
 		DefaultCountryCode:                countryCode,
 		StrictDCCheck:                     envBoolOr("TELESRV_STRICT_DC_CHECK", false),
+		CheckNumberFormat:                 envBoolOr("TELESRV_CHECK_NUMBER_FORMAT", false),
 		MTProtoMaxConnections:             envIntOr("TELESRV_MTPROTO_MAX_CONNECTIONS", 200000),
 		MTProtoMaxConnectionsPerIP:        envIntOr("TELESRV_MTPROTO_MAX_CONNECTIONS_PER_IP", 4096),
 		MTProtoMaxConcurrentHandshakes:    envIntOr("TELESRV_MTPROTO_MAX_CONCURRENT_HANDSHAKES", 256),
@@ -1316,8 +1322,8 @@ func Load() (Config, error) {
 		VerificationNotifyBatch:      envIntOr("TELESRV_VERIFICATION_NOTIFY_BATCH", 50),
 		// Empty keeps the built-in English defaults: domain trims and falls
 		// back when the stored text is blank (domain.SetModerationProfileWarning).
-		ScamProfileWarning: envOr("TELESRV_SCAM_WARNING", ""),
-		FakeProfileWarning: envOr("TELESRV_FAKE_WARNING", ""),
+		ScamProfileWarning:           envOr("TELESRV_SCAM_WARNING", ""),
+		FakeProfileWarning:           envOr("TELESRV_FAKE_WARNING", ""),
 		BroadcastWorkerInterval:      envDurationOr("TELESRV_BROADCAST_WORKER_INTERVAL", 3*time.Second),
 		BroadcastWorkerLease:         envDurationOr("TELESRV_BROADCAST_WORKER_LEASE", 30*time.Second),
 		BroadcastMaterializeBatch:    envIntOr("TELESRV_BROADCAST_MATERIALIZE_BATCH", 200),
