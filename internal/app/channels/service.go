@@ -1511,6 +1511,33 @@ func (s *Service) ensureCanSend(ctx context.Context, userID int64) error {
 	return s.sendGate.CanSendMessages(ctx, userID)
 }
 
+// EditFactCheck 写入或删除一条消息的事实核查标签（Layer 231）。
+// 空文本表示删除标签；权限由 store 按“作者或可编辑消息的管理员”裁决。
+func (s *Service) EditFactCheck(ctx context.Context, userID int64, req domain.EditFactCheckRequest) (domain.EditFactCheckResult, error) {
+	if s == nil || s.channels == nil || userID == 0 {
+		return domain.EditFactCheckResult{}, domain.ErrChannelInvalid
+	}
+	if req.UserID == 0 {
+		req.UserID = userID
+	}
+	if req.UserID != userID || req.ChannelID == 0 || req.MessageID <= 0 {
+		return domain.EditFactCheckResult{}, domain.ErrChannelInvalid
+	}
+	return s.channels.EditFactCheck(ctx, req)
+}
+
+// GetFactChecks 批量读取一组消息的事实核查标签（Layer 231）。
+// 读取需要频道成员身份：非成员看不到该频道的消息，自然也拿不到标签。
+func (s *Service) GetFactChecks(ctx context.Context, userID, channelID int64, messageIDs []int) (domain.FactCheckList, error) {
+	if s == nil || s.channels == nil || userID == 0 || channelID == 0 || len(messageIDs) == 0 {
+		return domain.FactCheckList{}, nil
+	}
+	if _, err := s.channels.ResolveChannel(ctx, userID, channelID); err != nil {
+		return domain.FactCheckList{}, err
+	}
+	return s.channels.GetFactChecks(ctx, channelID, messageIDs)
+}
+
 // EditMessage edits a channel/supergroup text message.
 func (s *Service) EditMessage(ctx context.Context, userID int64, req domain.EditChannelMessageRequest) (domain.EditChannelMessageResult, error) {
 	if s == nil || s.channels == nil || userID == 0 {
