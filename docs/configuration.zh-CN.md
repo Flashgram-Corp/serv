@@ -39,6 +39,7 @@
 | `TELESRV_DC` | positive TL int32 / `2` | 服务端输出配置、媒体/DC 元数据和 `channelFull.stats_dc` 使用的规范 DC ID；必须在 `1..2147483647`，否则启动失败。当前单后端不会按它分区密钥交换状态。 |
 | `TELESRV_DEFAULT_COUNTRY_CODE` | ISO alpha-2 / `CN` | `help.getNearestDc` 返回的登录页默认国家。客户端把 `CN` 映射为国际区号 `+86`、`US` 映射为 `+1`。输入会 trim、转大写并校验为国家或自治地区；格式错误或未知值会让启动失败。 |
 | `TELESRV_STRICT_DC_CHECK` | bool / `false` | 默认 `false`，永久与临时密钥交换接受任意 wire int32 DC 标签。设为 `true` 时永久标签必须等于 `TELESRV_DC`、临时标签绝对值必须等于 `TELESRV_DC`；它仅是诊断开关，不提供多 DC 隔离。 |
+| `TELESRV_CHECK_NUMBER_FORMAT` | bool / `false` | 登录手机号的格式策略。默认 `false` 走宽松门：国家码存在且长度符合该国号段计划即可，短号段与未分配号段（如 `+7 123`、`+1488`）同样可以作为登录身份；但省略国家码的本地号（前导 0）仍然拒绝。设为 `true` 时额外要求号段已被真实国家分配，短号段与未分配号段一律拒绝。保留服务号 `+42777` 在两种模式下都不能登录。 |
 | `TELESRV_WEBSOCKET_ENABLE` | bool / `true` | 在 MTProto 监听端口启用 MTProto-over-WebSocket 分流。 |
 | `TELESRV_WEBSOCKET_ALLOWED_ORIGINS` | list / `http://localhost:1234,http://127.0.0.1:1234` | 浏览器 WebSocket origin 白名单；`*` 只用于临时调试。 |
 | `TELESRV_MTPROTO_MAX_CONNECTIONS` | int / `200000` | 全局物理连接 admission 上限；负数关闭该门禁。 |

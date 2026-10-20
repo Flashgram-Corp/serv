@@ -642,6 +642,12 @@ func run(logger *zap.Logger) error {
 	if !domain.ConfigurePremiumBotUsername(cfg.PremiumBotUsername) {
 		return fmt.Errorf("configure Premium bot username %q", cfg.PremiumBotUsername)
 	}
+	// 手机号格式策略必须在 store / RPC service 构造前安装：login identity 的
+	// 规范化结果会落进 users.phone，策略切换不能留下半规范化数据。
+	domain.ConfigurePhoneFormatCheck(cfg.CheckNumberFormat)
+	logger.Info("手机号格式策略",
+		zap.Bool("check_number_format", cfg.CheckNumberFormat),
+		zap.Bool("strict", domain.PhoneFormatCheckEnabled()))
 	// SCAM/FAKE 警告文案（空白 → domain 内置英文默认值）：启动时写入一次，
 	// getFullUser / channels.getFullChannel / 邀请预览的 About 投影都会读取。
 	domain.SetModerationProfileWarning(cfg.ScamProfileWarning, cfg.FakeProfileWarning)
