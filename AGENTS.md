@@ -52,6 +52,11 @@ The rules that keep it that way:
   `tabs` array. Commerce holds Prices and the Stars ledger; Media holds Storage;
   Accounts holds Account Rating and Shared devices. A new row is only for a
   genuinely new job. A section with a single visible tab draws no tab bar.
+- **A tab that is a single button is not a tab.** The Stars giveaway was a page
+  with one field and one button; it now lives at the bottom of the Stars &
+  Premium page, in its own warned frame, and the old `/star-issue` URL is an
+  alias of that tab (`aliases` in `nav.ts` keeps the sidebar row and the tab bar
+  lit on it).
 - **Declare the tab's real right.** It must be the right the route enforces
   server-side. A right that is not in the table has no route of its own -- it
   widens an action on a page already gated by its read right. If you need a new
