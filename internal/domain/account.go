@@ -28,8 +28,8 @@ var phoneFormatCheck atomic.Bool
 
 // ConfigurePhoneFormatCheck installs the deployment's phone-number format
 // policy. Strict mode requires the number to sit in an assigned range of a
-// real country calling code; the default lenient mode accepts any explicitly
-// international number whose digits fit the length bounds.
+// real country calling code; the default lenient mode also accepts nonzero-leading
+// digit identities outside the numbering plan, with or without a leading '+'.
 func ConfigurePhoneFormatCheck(strict bool) {
 	phoneFormatCheck.Store(strict)
 }
