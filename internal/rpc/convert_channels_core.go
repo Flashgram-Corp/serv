@@ -159,6 +159,11 @@ func tgChannelMessage(viewerUserID int64, m domain.ChannelMessage) tg.MessageCla
 	if m.PaidMessageStars > 0 {
 		msg.SetPaidMessageStars(m.PaidMessageStars)
 	}
+	// Layer 231 事实核查标签随消息下发；need_check 置位时只带 hash，
+	// 客户端滚动到该消息时用 messages.getFactCheck 懒加载结论文本。
+	if factCheck := tgFactCheck(m.FactCheck); factCheck != nil {
+		msg.SetFactcheck(*factCheck)
+	}
 	if m.Pinned {
 		msg.SetPinned(true)
 	}
