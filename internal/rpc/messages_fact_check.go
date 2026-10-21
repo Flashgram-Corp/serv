@@ -15,7 +15,7 @@ import (
 // need_check 置位时按协议只带 hash：country/text 由客户端用
 // messages.getFactCheck 懒加载；已经有结论时直接带上国家与文本。
 func tgFactCheck(check *domain.FactCheck) *tg.FactCheck {
-	if check == nil {
+	if check == nil || check.Hash == 0 {
 		return nil
 	}
 	out := &tg.FactCheck{Hash: check.Hash}
@@ -118,10 +118,10 @@ func (r *Router) onMessagesGetFactCheck(ctx context.Context, req *tg.MessagesGet
 	if err != nil {
 		return nil, factCheckErr(err)
 	}
-	out := make([]tg.FactCheck, 0, len(list.FactChecks))
-	for _, check := range list.FactChecks {
+	out := make([]tg.FactCheck, len(list.FactChecks))
+	for i, check := range list.FactChecks {
 		if projected := tgFactCheck(&check); projected != nil {
-			out = append(out, *projected)
+			out[i] = *projected
 		}
 	}
 	return out, nil
@@ -129,23 +129,10 @@ func (r *Router) onMessagesGetFactCheck(ctx context.Context, req *tg.MessagesGet
 
 // factCheckUpdates 把事实核查写入产生的结果投影成 tg.Updates。
 func (r *Router) factCheckUpdates(ctx context.Context, viewerUserID int64, res domain.EditFactCheckResult) *tg.Updates {
-	updates := make([]tg.UpdateClass, 0, 1)
-	userIDs := make(map[int64]struct{})
-	channelIDs := make(map[int64]struct{})
-	if res.Event.Pts != 0 {
-		if update := tgChannelUpdate(viewerUserID, res.Event); update != nil {
-			updates = append(updates, update)
-		}
-		collectChannelUpdatePeerRefs(res.Event, res.Channel.ID, userIDs, channelIDs)
-		collectChannelMessagePeerRefs(res.Message, res.Channel.ID, userIDs, channelIDs)
+	edit := domain.EditChannelMessageResult{
+		Channel: res.Channel, Message: res.Message, Event: res.Event, Recipients: res.Recipients,
 	}
-	chats := []tg.ChatClass{tgChannelChatMin(viewerUserID, res.Channel)}
-	cache := newViewerPeerCache(r)
-	chats = append(chats, tgChannels(viewerUserID, cache.channelsForIDs(ctx, viewerUserID, peerIDMapKeys(channelIDs)))...)
-	return &tg.Updates{
-		Updates: updates,
-		Users:   tgUsersForViewer(viewerUserID, cache.usersForIDs(ctx, viewerUserID, peerIDMapKeys(userIDs))),
-		Chats:   chats,
-		Date:    int(r.clock.Now().Unix()),
-	}
+	updates := r.channelEditMessageUpdates(ctx, viewerUserID, edit)
+	r.enqueueChannelEditMessageFanout(ctx, viewerUserID, edit)
+	return updates
 }

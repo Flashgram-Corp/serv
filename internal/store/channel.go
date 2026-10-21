@@ -103,8 +103,6 @@ type ChannelStore interface {
 	EditChannelMessage(ctx context.Context, req domain.EditChannelMessageRequest) (domain.EditChannelMessageResult, error)
 	// EditFactCheck 写入或删除消息上的 Layer 231 事实核查标签；空文本表示删除。
 	EditFactCheck(ctx context.Context, req domain.EditFactCheckRequest) (domain.EditFactCheckResult, error)
-	// GetFactChecks 批量读取消息上的事实核查标签；没有标签的消息不返回。
-	GetFactChecks(ctx context.Context, channelID int64, messageIDs []int) (domain.FactCheckList, error)
 	DeleteChannelMessages(ctx context.Context, req domain.DeleteChannelMessagesRequest) (domain.DeleteChannelMessagesResult, error)
 	DeleteChannelHistory(ctx context.Context, req domain.DeleteChannelHistoryRequest) (domain.DeleteChannelHistoryResult, error)
 	DeleteChannelParticipantHistory(ctx context.Context, req domain.DeleteChannelParticipantHistoryRequest) (domain.DeleteChannelHistoryResult, error)

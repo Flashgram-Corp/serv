@@ -25,20 +25,45 @@ func TestValidateFactCheck(t *testing.T) {
 }
 
 func TestFactCheckHashIsStablePerMessage(t *testing.T) {
-	first := FactCheckHash(42, 7, "verdict")
-	if first != FactCheckHash(42, 7, "verdict") {
+	first := FactCheckHash(42, 7, FactCheck{Text: "verdict"})
+	if first != FactCheckHash(42, 7, FactCheck{Text: "verdict"}) {
 		t.Fatal("FactCheckHash is not stable for the same message and text")
 	}
-	if first == FactCheckHash(42, 8, "verdict") {
+	if first == FactCheckHash(42, 8, FactCheck{Text: "verdict"}) {
 		t.Fatal("FactCheckHash collides across message ids")
 	}
-	if first == FactCheckHash(43, 7, "verdict") {
+	if first == FactCheckHash(43, 7, FactCheck{Text: "verdict"}) {
 		t.Fatal("FactCheckHash collides across channels")
 	}
-	if first == FactCheckHash(42, 7, "other verdict") {
+	if first == FactCheckHash(42, 7, FactCheck{Text: "other verdict"}) {
 		t.Fatal("FactCheckHash collides across texts")
 	}
 	if first == 0 {
 		t.Fatal("FactCheckHash must never be zero")
+	}
+}
+
+func TestFactCheckHashCoversVisibleContent(t *testing.T) {
+	base := FactCheck{Text: "source", Country: "DE", Entities: []MessageEntity{{Type: MessageEntityTextURL, Offset: 0, Length: 6, URL: "https://example.com/a"}}}
+	before := FactCheckHash(42, 7, base)
+	for _, change := range []func(*FactCheck){
+		func(c *FactCheck) { c.Country = "US" },
+		func(c *FactCheck) { c.NeedCheck = true },
+		func(c *FactCheck) { c.Entities[0].URL = "https://example.com/b" },
+		func(c *FactCheck) { c.Entities[0].Type = MessageEntityBold },
+	} {
+		copy := base
+		copy.Entities = append([]MessageEntity(nil), base.Entities...)
+		change(&copy)
+		if FactCheckHash(42, 7, copy) == before {
+			t.Fatal("visible content changed without changing hash")
+		}
+	}
+	base.Hash = 123
+	if FactCheckHash(42, 7, base) != before {
+		t.Fatal("stored hash affected the content hash")
+	}
+	if FactCheckHash(42, 7, FactCheck{Text: "x"}) != FactCheckHash(42, 7, FactCheck{Text: "x", Entities: []MessageEntity{}}) {
+		t.Fatal("nil and empty entity vectors have different hashes")
 	}
 }

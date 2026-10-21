@@ -2,8 +2,11 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/jackc/pgx/v5"
 
 	"telesrv/internal/domain"
 )
@@ -31,7 +34,7 @@ func (s *ChannelStore) EditFactCheck(ctx context.Context, req domain.EditFactChe
 		if err := domain.ValidateFactCheck(candidate); err != nil {
 			return domain.EditFactCheckResult{}, err
 		}
-		candidate.Hash = domain.FactCheckHash(req.ChannelID, req.MessageID, candidate.Text)
+		candidate.Hash = domain.FactCheckHash(req.ChannelID, req.MessageID, candidate)
 		check = &candidate
 	}
 	if req.Date == 0 {
@@ -59,6 +62,9 @@ func (s *ChannelStore) EditFactCheck(ctx context.Context, req domain.EditFactChe
 	if err != nil {
 		return domain.EditFactCheckResult{}, err
 	}
+	if !channel.Broadcast {
+		return domain.EditFactCheckResult{}, domain.ErrChannelInvalid
+	}
 	msg, err := s.getChannelMessage(ctx, tx, req.ChannelID, req.MessageID)
 	if err != nil {
 		return domain.EditFactCheckResult{}, err
@@ -69,21 +75,27 @@ func (s *ChannelStore) EditFactCheck(ctx context.Context, req domain.EditFactChe
 	if msg.SenderUserID != req.UserID && !canEditChannelMessage(member) {
 		return domain.EditFactCheckResult{}, domain.ErrFactCheckForbidden
 	}
+	if domain.FactChecksEqual(msg.FactCheck, check) {
+		return domain.EditFactCheckResult{}, domain.ErrMessageNotModified
+	}
 	pts, err := s.reserveChannelPts(ctx, tx, req.ChannelID)
 	if err != nil {
 		return domain.EditFactCheckResult{}, fmt.Errorf("allocate channel fact check pts: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `
+	msg, err = scanChannelMessage(tx.QueryRow(ctx, `
 UPDATE channel_messages
 SET factcheck = $3,
     pts = $4,
     updated_at = now()
-WHERE channel_id = $1 AND id = $2 AND NOT deleted`,
-		req.ChannelID, req.MessageID, string(payload), pts); err != nil {
+WHERE channel_id = $1 AND id = $2 AND NOT deleted
+RETURNING `+channelMessageColumns,
+		req.ChannelID, req.MessageID, string(payload), pts))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.EditFactCheckResult{}, domain.ErrMessageIDInvalid
+	}
+	if err != nil {
 		return domain.EditFactCheckResult{}, fmt.Errorf("update channel fact check: %w", err)
 	}
-	msg.FactCheck = check
-	msg.Pts = pts
 	event := domain.ChannelUpdateEvent{
 		ChannelID:    req.ChannelID,
 		Type:         domain.ChannelUpdateEditMessage,
@@ -103,43 +115,7 @@ WHERE channel_id = $1 AND id = $2 AND NOT deleted`,
 		return domain.EditFactCheckResult{}, fmt.Errorf("commit edit fact check: %w", err)
 	}
 	committed = true
+	channel.Pts = pts
 	recipients, _ := s.ListActiveChannelMemberIDs(ctx, req.UserID, req.ChannelID, 0)
 	return domain.EditFactCheckResult{Channel: channel, Message: msg, FactCheck: check, Event: event, Recipients: recipients}, nil
-}
-
-// GetFactChecks 批量读取一组消息的事实核查标签。
-// 没有标签的消息不出现在结果里，因此顺序由请求决定、长度可能更短。
-func (s *ChannelStore) GetFactChecks(ctx context.Context, channelID int64, messageIDs []int) (domain.FactCheckList, error) {
-	if channelID == 0 || len(messageIDs) == 0 {
-		return domain.FactCheckList{}, nil
-	}
-	rows, err := s.db.Query(ctx, `
-SELECT id, factcheck::text
-FROM channel_messages
-WHERE channel_id = $1 AND id = ANY($2::int[]) AND factcheck <> '{}'::jsonb`,
-		channelID, messageIDs)
-	if err != nil {
-		return domain.FactCheckList{}, fmt.Errorf("read channel fact checks: %w", err)
-	}
-	defer rows.Close()
-	out := make([]domain.FactCheck, 0, len(messageIDs))
-	for rows.Next() {
-		var id int
-		var raw string
-		if err := rows.Scan(&id, &raw); err != nil {
-			return domain.FactCheckList{}, fmt.Errorf("scan channel fact check: %w", err)
-		}
-		check, err := decodeFactCheck(raw)
-		if err != nil {
-			return domain.FactCheckList{}, err
-		}
-		if check == nil {
-			continue
-		}
-		out = append(out, *check)
-	}
-	if err := rows.Err(); err != nil {
-		return domain.FactCheckList{}, fmt.Errorf("read channel fact checks: %w", err)
-	}
-	return domain.FactCheckList{FactChecks: out}, nil
 }

@@ -20,6 +20,9 @@ func (s *ChannelStore) EditFactCheck(_ context.Context, req domain.EditFactCheck
 		return domain.EditFactCheckResult{}, err
 	}
 	member := s.members[req.ChannelID][req.UserID]
+	if !channel.Broadcast {
+		return domain.EditFactCheckResult{}, domain.ErrChannelInvalid
+	}
 	idx, ok := s.findMessageIndexLocked(req.ChannelID, req.MessageID)
 	if !ok || s.messages[req.ChannelID][idx].Deleted || s.messages[req.ChannelID][idx].Action != nil {
 		return domain.EditFactCheckResult{}, domain.ErrMessageIDInvalid
@@ -39,10 +42,13 @@ func (s *ChannelStore) EditFactCheck(_ context.Context, req domain.EditFactCheck
 		if err := domain.ValidateFactCheck(candidate); err != nil {
 			return domain.EditFactCheckResult{}, err
 		}
-		candidate.Hash = domain.FactCheckHash(req.ChannelID, req.MessageID, candidate.Text)
+		candidate.Hash = domain.FactCheckHash(req.ChannelID, req.MessageID, candidate)
 		check = &candidate
 	}
 	date := req.Date
+	if domain.FactChecksEqual(msg.FactCheck, check) {
+		return domain.EditFactCheckResult{}, domain.ErrMessageNotModified
+	}
 	if date == 0 {
 		date = msg.Date
 	}
@@ -75,26 +81,4 @@ func (s *ChannelStore) EditFactCheck(_ context.Context, req domain.EditFactCheck
 		FactCheck:  msg.FactCheck,
 		Recipients: s.activeMemberIDsLocked(req.ChannelID, 0, 0),
 	}, nil
-}
-
-// GetFactChecks 批量读取一组消息的事实核查标签。
-func (s *ChannelStore) GetFactChecks(_ context.Context, channelID int64, messageIDs []int) (domain.FactCheckList, error) {
-	if channelID == 0 || len(messageIDs) == 0 {
-		return domain.FactCheckList{}, nil
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := make([]domain.FactCheck, 0, len(messageIDs))
-	for _, id := range messageIDs {
-		idx, ok := s.findMessageIndexLocked(channelID, id)
-		if !ok {
-			continue
-		}
-		msg := s.messages[channelID][idx]
-		if msg.FactCheck == nil {
-			continue
-		}
-		out = append(out, *msg.FactCheck)
-	}
-	return domain.FactCheckList{FactChecks: out}, nil
 }

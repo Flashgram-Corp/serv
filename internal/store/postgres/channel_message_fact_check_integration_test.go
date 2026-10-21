@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	appchannels "telesrv/internal/app/channels"
 	"telesrv/internal/domain"
 )
 
@@ -101,12 +102,28 @@ func TestChannelFactCheckSurvivesReadPaths(t *testing.T) {
 	}
 
 	// 批量读取返回同一条结论。
-	list, err := channels.GetFactChecks(ctx, channelID, []int{post.Message.ID})
+	list, err := appchannels.NewService(channels).GetFactChecks(ctx, owner.ID, channelID, []int{post.Message.ID})
 	if err != nil {
 		t.Fatalf("getFactChecks: %v", err)
 	}
 	if len(list.FactChecks) != 1 || list.FactChecks[0].Text != "The claim is false." {
 		t.Fatalf("getFactChecks = %+v", list.FactChecks)
+	}
+	service := appchannels.NewService(channels)
+	ordered, err := service.GetFactChecks(ctx, member.ID, channelID, []int{999999, post.Message.ID, post.Message.ID})
+	if err != nil || len(ordered.FactChecks) != 3 || ordered.FactChecks[0].Hash != 0 || ordered.FactChecks[1].Hash != got.Hash || ordered.FactChecks[2].Hash != got.Hash {
+		t.Fatalf("ordered/duplicate batch = %+v, %v", ordered, err)
+	}
+	if _, err := channels.DeleteChannelHistory(ctx, domain.DeleteChannelHistoryRequest{UserID: member.ID, ChannelID: channelID, MaxID: post.Message.ID, Date: 1_700_100_450}); err != nil {
+		t.Fatal(err)
+	}
+	cleared, err := service.GetFactChecks(ctx, member.ID, channelID, []int{post.Message.ID})
+	if err != nil || len(cleared.FactChecks) != 1 || cleared.FactChecks[0].Hash != 0 {
+		t.Fatalf("cleared history verdict = %+v, %v", cleared, err)
+	}
+	ownerRead, err := service.GetFactChecks(ctx, owner.ID, channelID, []int{post.Message.ID})
+	if err != nil || ownerRead.FactChecks[0].Hash == 0 {
+		t.Fatalf("other viewer lost verdict: %+v, %v", ownerRead, err)
 	}
 
 	// 删除后标签消失。
@@ -121,5 +138,29 @@ func TestChannelFactCheckSurvivesReadPaths(t *testing.T) {
 	}
 	if history.Messages[0].FactCheck != nil {
 		t.Fatalf("message still carries a fact check: %+v", history.Messages[0].FactCheck)
+	}
+	// A fresh store reads both committed edits from the durable channel stream.
+	difference, err := NewChannelStore(pool).ListChannelDifference(ctx, domain.ChannelDifferenceRequest{UserID: owner.ID, ChannelID: channelID, Pts: res.Event.Pts - 1, Limit: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var editChecks []*domain.FactCheck
+	for _, event := range difference.Events {
+		if event.Type == domain.ChannelUpdateEditMessage {
+			editChecks = append(editChecks, event.Message.FactCheck)
+		}
+	}
+	if len(editChecks) != 2 || editChecks[0] == nil || editChecks[1] != nil {
+		t.Fatalf("durable edit/delete snapshots = %+v", editChecks)
+	}
+	if _, err := channels.EditFactCheck(ctx, domain.EditFactCheckRequest{UserID: owner.ID, ChannelID: channelID, MessageID: post.Message.ID, Text: "must disappear with the message"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := channels.DeleteChannelMessages(ctx, domain.DeleteChannelMessagesRequest{UserID: owner.ID, ChannelID: channelID, IDs: []int{post.Message.ID}, Date: 1_700_100_600}); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := service.GetFactChecks(ctx, owner.ID, channelID, []int{post.Message.ID})
+	if err != nil || len(deleted.FactChecks) != 1 || deleted.FactChecks[0].Hash != 0 {
+		t.Fatalf("deleted message verdict = %+v, %v", deleted, err)
 	}
 }

@@ -275,6 +275,8 @@ func messageEditErr(err error) error {
 // factCheckErr 把事实核查的领域错误映射成客户端可识别的 rpc_error。
 func factCheckErr(err error) error {
 	switch {
+	case errors.Is(err, domain.ErrMessageNotModified):
+		return messageNotModifiedErr()
 	case errors.Is(err, domain.ErrMessageIDInvalid):
 		return messageIDInvalidErr()
 	case errors.Is(err, domain.ErrFactCheckInvalid):

@@ -3,7 +3,7 @@ package domain
 import (
 	"crypto/sha256"
 	"encoding/binary"
-	"fmt"
+	"encoding/json"
 	"strings"
 )
 
@@ -23,7 +23,7 @@ type FactCheck struct {
 	Text string
 	// Entities 是 Text 的富文本实体（text_url/mention/...）。
 	Entities []MessageEntity
-	// Hash 是稳定标识：同一条消息的同一份结论文本始终得到同一个 hash，
+	// Hash 是稳定标识：同一条消息的同一份完整结论始终得到同一个 hash，
 	// 客户端用它识别“这条事实核查是不是已经改过”。
 	Hash int64
 }
@@ -59,16 +59,39 @@ func isAlpha2Country(country string) bool {
 	return true
 }
 
-// FactCheckHash 计算事实核查的稳定标识：绑定频道、消息与结论文本，
-// 同一份内容永远得到同一个值，改写文本则得到新值。
-func FactCheckHash(channelID int64, messageID int, text string) int64 {
-	payload := fmt.Sprintf("%d:%d:%s", channelID, messageID, text)
-	sum := sha256.Sum256([]byte(payload))
+// FactCheckHash covers every visible field, including link targets and formatting.
+// Only fixed primitive fields are encoded; Hash itself is deliberately excluded.
+func FactCheckHash(channelID int64, messageID int, check FactCheck) int64 {
+	entities := append([]MessageEntity{}, check.Entities...)
+	payload, _ := json.Marshal(struct {
+		ChannelID int64
+		MessageID int
+		NeedCheck bool
+		Country   string
+		Text      string
+		Entities  []MessageEntity
+	}{channelID, messageID, check.NeedCheck, check.Country, check.Text, entities})
+	sum := sha256.Sum256(payload)
 	hash := int64(binary.BigEndian.Uint64(sum[:8]) &^ (1 << 63))
 	if hash == 0 {
 		hash = 1
 	}
 	return hash
+}
+
+func FactChecksEqual(a, b *FactCheck) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	if a.Text != b.Text || a.Country != b.Country || a.NeedCheck != b.NeedCheck || len(a.Entities) != len(b.Entities) {
+		return false
+	}
+	for i := range a.Entities {
+		if a.Entities[i] != b.Entities[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // EditFactCheckRequest 是写一条事实核查的业务请求。
@@ -96,4 +119,23 @@ type EditFactCheckResult struct {
 // FactCheckList 是 messages.getFactCheck 的返回集合，顺序与请求一致。
 type FactCheckList struct {
 	FactChecks []FactCheck
+}
+
+// FactChecksForMessages projects an already-authorized message batch without
+// shifting positions when a message is missing, deleted or has no verdict.
+func FactChecksForMessages(messages []ChannelMessage, ids []int) FactCheckList {
+	byID := make(map[int]*FactCheck, len(messages))
+	for _, msg := range messages {
+		if !msg.Deleted && msg.Action == nil && msg.FactCheck != nil {
+			byID[msg.ID] = msg.FactCheck
+		}
+	}
+	out := FactCheckList{FactChecks: make([]FactCheck, len(ids))}
+	for i, id := range ids {
+		if check := byID[id]; check != nil {
+			out.FactChecks[i] = *check
+			out.FactChecks[i].Entities = append([]MessageEntity(nil), check.Entities...)
+		}
+	}
+	return out
 }
