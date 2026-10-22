@@ -120,6 +120,70 @@ func TestMessagesCreateChatCreatesMegagroupAndDialogsRPC(t *testing.T) {
 	}
 }
 
+func TestChatInvitePrivacyDoesNotApplyToBotsRPC(t *testing.T) {
+	ctx := context.Background()
+	userStore := memory.NewUserStore()
+	owner, err := userStore.Create(ctx, domain.User{AccessHash: 41, Phone: "15550001041", FirstName: "Owner"})
+	if err != nil {
+		t.Fatalf("create owner: %v", err)
+	}
+	bot, err := userStore.Create(ctx, domain.User{AccessHash: 42, FirstName: "Helper", Username: "helper_bot", Bot: true, BotInfoVersion: 1})
+	if err != nil {
+		t.Fatalf("create bot: %v", err)
+	}
+	human, err := userStore.Create(ctx, domain.User{AccessHash: 43, Phone: "15550001043", FirstName: "Stranger"})
+	if err != nil {
+		t.Fatalf("create human: %v", err)
+	}
+	// Neither the bot nor the human has the owner as a contact, and both carry
+	// the strictest chat_invite rule: only the human may be filtered out.
+	privacy := appprivacy.NewService(memory.NewPrivacyStore(), memory.NewContactStore())
+	for _, id := range []int64{bot.ID, human.ID} {
+		if _, err := privacy.SetRules(ctx, id, domain.PrivacyKeyChatInvite, []domain.PrivacyRule{{Kind: domain.PrivacyRuleDisallowAll}}); err != nil {
+			t.Fatalf("set invite privacy: %v", err)
+		}
+	}
+	channelStore := memory.NewChannelStore()
+	r := New(Config{}, Deps{
+		Users:    appusers.NewService(userStore),
+		Channels: appchannels.NewService(channelStore),
+		Dialogs:  appdialogs.NewService(memory.NewDialogStore(), channelStore),
+		Privacy:  privacy,
+	}, zaptest.NewLogger(t), clock.System)
+
+	invited, err := r.onMessagesCreateChat(WithUserID(ctx, owner.ID), &tg.MessagesCreateChatRequest{
+		Users: []tg.InputUserClass{
+			&tg.InputUser{UserID: bot.ID, AccessHash: bot.AccessHash},
+			&tg.InputUser{UserID: human.ID, AccessHash: human.AccessHash},
+		},
+		Title: "Bot Group",
+	})
+	if err != nil {
+		t.Fatalf("create chat: %v", err)
+	}
+	if len(invited.MissingInvitees) != 1 || invited.MissingInvitees[0].UserID != human.ID {
+		t.Fatalf("missing invitees = %+v, want only the human %d (bots ignore chat_invite privacy)", invited.MissingInvitees, human.ID)
+	}
+	channel := invited.Updates.(*tg.Updates).Chats[len(invited.Updates.(*tg.Updates).Chats)-1].(*tg.Channel)
+	members, err := r.onChannelsGetParticipants(WithUserID(ctx, owner.ID), &tg.ChannelsGetParticipantsRequest{
+		Channel: &tg.InputChannel{ChannelID: channel.ID, AccessHash: channel.AccessHash},
+		Filter:  &tg.ChannelParticipantsRecent{},
+		Limit:   10,
+	})
+	if err != nil {
+		t.Fatalf("get participants: %v", err)
+	}
+	botIsMember := false
+	for _, p := range members.(*tg.ChannelsChannelParticipants).Participants {
+		if participant, ok := p.(*tg.ChannelParticipant); ok && participant.UserID == bot.ID {
+			botIsMember = true
+		}
+	}
+	if !botIsMember {
+		t.Fatalf("participants = %+v, want the invited bot %d", members.(*tg.ChannelsChannelParticipants).Participants, bot.ID)
+	}
+}
+
 func TestMessagesCreateChatFiltersPrivacyBeforeMembershipWritesRPC(t *testing.T) {
 	ctx := context.Background()
 	userStore := memory.NewUserStore()
