@@ -171,6 +171,7 @@ func (g sensitiveRateGroup) String() string {
 var sensitiveRPCRateGroups = map[uint32]sensitiveRateGroup{
 	tg.AuthCheckPasswordRequestTypeID:                    rateGroupSRP,
 	tg.AccountGetPasswordRequestTypeID:                   rateGroupSRP,
+	tg.AccountGetTmpPasswordRequestTypeID:                rateGroupSRP,
 	tg.AccountUpdatePasswordSettingsRequestTypeID:        rateGroupSRP,
 	tg.AccountDeleteAccountRequestTypeID:                 rateGroupSRP,
 	tg.MessagesEditChatCreatorRequestTypeID:              rateGroupSRP,

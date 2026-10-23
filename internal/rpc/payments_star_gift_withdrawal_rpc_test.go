@@ -3,6 +3,7 @@ package rpc
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"testing"
@@ -15,6 +16,7 @@ import (
 
 	appaccount "telesrv/internal/app/account"
 	"telesrv/internal/domain"
+	"telesrv/internal/store"
 	"telesrv/internal/store/memory"
 )
 
@@ -45,20 +47,21 @@ func (s *withdrawalRPCGifts) Withdraw(_ context.Context, req domain.StarGiftWith
 	return domain.StarGiftWithdrawal{URL: "https://links.example.test/gift-withdrawal/token"}, nil
 }
 
-// withdrawalRPCAccount stands in for a future account.getTmpPassword issuer so
-// the later admission steps stay covered. Production fails closed at
-// CheckTmpPassword; TestStarGiftWithdrawalTmpPasswordFailsClosed pins that.
+// withdrawalRPCAccount accepts any tmp_password so the later admission steps
+// stay covered; TestStarGiftWithdrawalTmpPasswordGate runs the real check.
 type withdrawalRPCAccount struct {
 	AccountService
-	checks   int
-	checked  []byte
-	checkErr error
-	state    domain.RevenueWithdrawalPasswordState
+	checks     int
+	checked    []byte
+	checkedKey [8]byte
+	checkErr   error
+	state      domain.RevenueWithdrawalPasswordState
 }
 
-func (s *withdrawalRPCAccount) CheckTmpPassword(_ context.Context, _ int64, tmpPassword []byte) error {
+func (s *withdrawalRPCAccount) CheckTmpPassword(_ context.Context, _ int64, authKeyID [8]byte, tmpPassword []byte, _ time.Time) error {
 	s.checks++
 	s.checked = append([]byte(nil), tmpPassword...)
+	s.checkedKey = authKeyID
 	return s.checkErr
 }
 
@@ -155,8 +158,8 @@ func TestStarGiftWithdrawalRejectsUnproven2FAAndFreshSessions(t *testing.T) {
 		slug, withdrawalTmpPassword(9))); !tgerr.Is(err, "TMP_PASSWORD_INVALID") {
 		t.Fatalf("wrong tmp password err = %v, want TMP_PASSWORD_INVALID", err)
 	}
-	if gifts.calls != 0 || !bytes.Equal(account.checked, withdrawalTmpPassword(9)) {
-		t.Fatalf("wrong tmp password: calls=%d checked=%x", gifts.calls, account.checked)
+	if gifts.calls != 0 || !bytes.Equal(account.checked, withdrawalTmpPassword(9)) || account.checkedKey != authKeyID {
+		t.Fatalf("wrong tmp password: calls=%d checked=%x on key %x", gifts.calls, account.checked, account.checkedKey)
 	}
 	account.checkErr = nil
 
@@ -228,37 +231,72 @@ func TestStarGiftWithdrawalRejectsBotsAndMapsCooldown(t *testing.T) {
 	}
 }
 
-// withdrawalRPCPasswordState keeps the production account service and fakes
-// only the durable 2FA facts, so CheckTmpPassword is the real gate.
-type withdrawalRPCPasswordState struct {
-	AccountService
-	state domain.RevenueWithdrawalPasswordState
+// withdrawalRPCLifecycle supplies only the durable 2FA facts the production
+// account service reads for the tmp_password binding.
+type withdrawalRPCLifecycle struct {
+	store.AccountLifecycleStore
+	snapshot domain.AccountDeletionSnapshot
 }
 
-func (s *withdrawalRPCPasswordState) RevenueWithdrawalPasswordState(context.Context, int64) (domain.RevenueWithdrawalPasswordState, error) {
-	return s.state, nil
+func (s *withdrawalRPCLifecycle) AccountDeletionSnapshot(context.Context, int64) (domain.AccountDeletionSnapshot, bool, error) {
+	return s.snapshot, true, nil
 }
 
-func TestStarGiftWithdrawalTmpPasswordFailsClosed(t *testing.T) {
+func TestStarGiftWithdrawalTmpPasswordGate(t *testing.T) {
 	r, userID, gifts, _, _, authKeyID := starGiftWithdrawalRouter(t)
 	ctx := WithAuthKeyID(WithUserID(context.Background(), userID), authKeyID)
-	r.deps.Account = &withdrawalRPCPasswordState{
-		AccountService: appaccount.NewService(memory.NewPasswordStore()),
-		state: domain.RevenueWithdrawalPasswordState{
-			HasPassword: true, PasswordChangedAt: time.Now().Add(-48 * time.Hour),
-		},
+	bgctx := context.Background()
+	changedAt := time.Now().Add(-48 * time.Hour)
+	auths := memory.NewAuthorizationStore()
+	otherKey := [8]byte{9, 9, 9}
+	for _, key := range [][8]byte{authKeyID, otherKey} {
+		if err := auths.Bind(bgctx, domain.Authorization{AuthKeyID: key, UserID: userID}); err != nil {
+			t.Fatalf("bind authorization: %v", err)
+		}
 	}
-	// telesrv issues no account.getTmpPassword value: neither an empty nor an
-	// arbitrary tmp_password may reach the slug, freshness or export checks.
+	login, _, _ := auths.ByAuthKey(bgctx, authKeyID)
+	grants := memory.NewTmpPasswordStore()
+	r.deps.Account = appaccount.NewService(memory.NewPasswordStore(),
+		appaccount.WithAccountLifecycle(&withdrawalRPCLifecycle{snapshot: domain.AccountDeletionSnapshot{
+			User: domain.User{ID: userID}, HasPassword: true, PasswordUpdatedAt: changedAt,
+		}}),
+		appaccount.WithTmpPasswords(grants, auths))
+
+	// Stands in for the account.getTmpPassword grant of this session; the
+	// issuance path itself is covered by the account service tests.
+	secret := withdrawalTmpPassword(7)
+	if err := grants.PutTmpPassword(bgctx, domain.TmpPasswordGrant{
+		AuthKeyID: authKeyID, UserID: userID, AuthorizationCreatedAt: login.CreatedAt,
+		PasswordChangedAt: changedAt, SecretHash: sha256.Sum256(secret), ValidUntil: time.Now().Add(10 * time.Minute),
+	}); err != nil {
+		t.Fatalf("put grant: %v", err)
+	}
+
+	// Without the issued value nothing reaches the slug, freshness or export
+	// checks: not an empty value, not arbitrary bytes, not this secret from
+	// another session of the same account.
+	otherCtx := WithAuthKeyID(WithUserID(context.Background(), userID), otherKey)
 	for _, slug := range []string{"withdrawal-test-gift", "never-minted"} {
 		for _, tmp := range [][]byte{nil, {}, withdrawalTmpPassword(9)} {
 			if _, err := r.onPaymentsGetStarGiftWithdrawalURL(ctx, withdrawalRequest(slug, tmp)); !tgerr.Is(err, "TMP_PASSWORD_INVALID") {
 				t.Fatalf("%s tmp %x err = %v, want TMP_PASSWORD_INVALID", slug, tmp, err)
 			}
 		}
+		if _, err := r.onPaymentsGetStarGiftWithdrawalURL(otherCtx, withdrawalRequest(slug, secret)); !tgerr.Is(err, "TMP_PASSWORD_INVALID") {
+			t.Fatalf("%s secret from another session err = %v, want TMP_PASSWORD_INVALID", slug, err)
+		}
 	}
 	if gifts.calls != 0 {
-		t.Fatalf("unverifiable tmp_password withdrew: calls=%d", gifts.calls)
+		t.Fatalf("unverified tmp_password withdrew: calls=%d", gifts.calls)
+	}
+
+	got, err := r.onPaymentsGetStarGiftWithdrawalURL(ctx, withdrawalRequest("withdrawal-test-gift", secret))
+	if err != nil || got.URL == "" || gifts.calls != 1 {
+		t.Fatalf("issued tmp_password withdrawal = %+v err=%v calls=%d", got, err, gifts.calls)
+	}
+	// The grant is reusable until valid_until, as TDesktop caches it.
+	if _, err := r.onPaymentsGetStarGiftWithdrawalURL(ctx, withdrawalRequest("withdrawal-test-gift", secret)); err != nil || gifts.calls != 2 {
+		t.Fatalf("reused tmp_password err=%v calls=%d", err, gifts.calls)
 	}
 }
 

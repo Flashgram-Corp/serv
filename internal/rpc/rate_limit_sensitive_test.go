@@ -59,6 +59,7 @@ func TestSensitiveRPCRateLimitGroupTable(t *testing.T) {
 	want := map[uint32]sensitiveRateGroup{
 		tg.AuthCheckPasswordRequestTypeID:                    rateGroupSRP,
 		tg.AccountGetPasswordRequestTypeID:                   rateGroupSRP,
+		tg.AccountGetTmpPasswordRequestTypeID:                rateGroupSRP,
 		tg.AccountUpdatePasswordSettingsRequestTypeID:        rateGroupSRP,
 		tg.AccountDeleteAccountRequestTypeID:                 rateGroupSRP,
 		tg.MessagesEditChatCreatorRequestTypeID:              rateGroupSRP,

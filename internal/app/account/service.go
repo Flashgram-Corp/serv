@@ -50,6 +50,7 @@ type Service struct {
 	authorizations            store.AuthorizationStore
 	phoneChanges              store.PhoneChangeStore
 	lifecycle                 store.AccountLifecycleStore
+	tmpPasswords              store.TmpPasswordStore
 	publicBaseURL             string
 	codes                     store.CodeStore
 	phoneChangeCode           string
@@ -303,14 +304,6 @@ func (s *Service) CheckPassword(ctx context.Context, userID int64, check domain.
 		return err
 	}
 	return checkSRP(settings, check)
-}
-
-// CheckTmpPassword validates a Layer 232 tmp_password proof. This server does
-// not implement account.getTmpPassword, so it has never issued a temporary
-// password: no value can match, and an empty value is the absence of a proof.
-// It fails closed until issuance exists and never falls back to an SRP check.
-func (s *Service) CheckTmpPassword(context.Context, int64, []byte) error {
-	return domain.ErrTmpPasswordInvalid
 }
 
 // GetPasswordWithoutRefresh returns persisted settings without rotating the SRP challenge.

@@ -681,24 +681,24 @@ func (r *Router) onPaymentsGetStarGiftWithdrawalURL(ctx context.Context, req *tg
 	if err != nil {
 		return nil, internalErr()
 	}
-	// Layer 232 的 2FA 证明是 account.getTmpPassword 签发的 tmp_password。空值只是
-	// “没有证明”，不能再像 inputCheckPasswordEmpty 那样代表未设密码账号通过；
+	// Layer 232 的 2FA 证明是本授权经 account.getTmpPassword 签发的 tmp_password。
+	// 空值只是“没有证明”，不能再像 inputCheckPasswordEmpty 那样代表未设密码账号通过；
 	// 与 payments.getStarsRevenueWithdrawalUrl 一致，先要求账号已设 2FA。
 	if !passwordState.HasPassword {
 		return nil, tgerr.New(400, "PASSWORD_MISSING")
 	}
-	if err := r.deps.Account.CheckTmpPassword(ctx, userID, req.TmpPassword); err != nil {
-		return nil, passwordErr(err)
+	authKeyID, ok := AuthKeyIDFrom(ctx)
+	if !ok || authKeyID == ([8]byte{}) {
+		return nil, authKeyUnregisteredErr()
 	}
 	now := r.clock.Now()
+	if err := r.deps.Account.CheckTmpPassword(ctx, userID, authKeyID, req.TmpPassword, now); err != nil {
+		return nil, passwordErr(err)
+	}
 	if wait := revenueWithdrawalFreshWait(passwordState.PasswordChangedAt, now); wait < 0 {
 		return nil, internalErr()
 	} else if wait > 0 {
 		return nil, tgerr.New(400, fmt.Sprintf("PASSWORD_TOO_FRESH_%d", wait))
-	}
-	authKeyID, ok := AuthKeyIDFrom(ctx)
-	if !ok || authKeyID == ([8]byte{}) {
-		return nil, authKeyUnregisteredErr()
 	}
 	authorization, found, err := r.deps.Auth.Authorization(ctx, authKeyID)
 	if err != nil {
