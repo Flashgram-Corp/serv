@@ -8,6 +8,7 @@ import (
 	"hash/fnv"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/iamxvbaba/td/tg"
 	"github.com/iamxvbaba/td/tgerr"
@@ -665,7 +666,41 @@ func (r *Router) onPaymentsTransferStarGift(ctx context.Context, req *tg.Payment
 }
 
 func (r *Router) onPaymentsGetStarGiftWithdrawalURL(ctx context.Context, req *tg.PaymentsGetStarGiftWithdrawalURLRequest) (*tg.PaymentsStarGiftWithdrawalURL, error) {
-	if req == nil || r.deps.Gifts == nil || r.deps.Account == nil || r.deps.Auth == nil {
+	if req == nil {
+		return nil, starGiftInvalidErr()
+	}
+	// Layer 232 的 2FA 证明是本授权经 account.getTmpPassword 签发的 tmp_password。
+	return r.starGiftWithdrawalURL(ctx, req.Stargift, func(userID int64, authKeyID [8]byte, now time.Time) error {
+		return r.deps.Account.CheckTmpPassword(ctx, userID, authKeyID, req.TmpPassword, now)
+	})
+}
+
+// onPaymentsGetStarGiftWithdrawalURLLegacy 服务 exact Layer 225–231 客户端：
+// 它们的 payments.getStarGiftWithdrawalUrl#d06e93a8 携带 SRP 证明而不是
+// tmp_password。td 把该构造器提升为独立的 legacy 方法，证明原样到达这里，
+// 只按 SRP 校验，永远不会被当成 tmp_password 或被丢弃。
+func (r *Router) onPaymentsGetStarGiftWithdrawalURLLegacy(ctx context.Context, req *tg.PaymentsGetStarGiftWithdrawalURLLegacyRequest) (*tg.PaymentsStarGiftWithdrawalURL, error) {
+	if req == nil {
+		return nil, starGiftInvalidErr()
+	}
+	return r.starGiftWithdrawalURL(ctx, req.Stargift, func(userID int64, _ [8]byte, _ time.Time) error {
+		// 与 payments.getStarsRevenueWithdrawalUrl 一致只认 SRP：账号已设 2FA 时
+		// inputCheckPasswordEmpty 不是证明。
+		if _, ok := req.Password.(*tg.InputCheckPasswordSRP); !ok {
+			return domain.ErrPasswordHashInvalid
+		}
+		return r.deps.Account.CheckPassword(ctx, userID, domainPasswordCheck(req.Password))
+	})
+}
+
+// starGiftWithdrawalURL 是两种 2FA 证明共用的导出门禁；checkProof 只校验
+// 各自方法的证明，其余顺序与判定对两种证明完全相同。
+func (r *Router) starGiftWithdrawalURL(
+	ctx context.Context,
+	input tg.InputSavedStarGiftClass,
+	checkProof func(userID int64, authKeyID [8]byte, now time.Time) error,
+) (*tg.PaymentsStarGiftWithdrawalURL, error) {
+	if r.deps.Gifts == nil || r.deps.Account == nil || r.deps.Auth == nil {
 		return nil, starGiftInvalidErr()
 	}
 	userID, _, err := r.currentUserID(ctx)
@@ -681,9 +716,8 @@ func (r *Router) onPaymentsGetStarGiftWithdrawalURL(ctx context.Context, req *tg
 	if err != nil {
 		return nil, internalErr()
 	}
-	// Layer 232 的 2FA 证明是本授权经 account.getTmpPassword 签发的 tmp_password。
-	// 空值只是“没有证明”，不能再像 inputCheckPasswordEmpty 那样代表未设密码账号通过；
-	// 与 payments.getStarsRevenueWithdrawalUrl 一致，先要求账号已设 2FA。
+	// 未设 2FA 的账号没有可校验的证明：空 tmp_password 与 inputCheckPasswordEmpty
+	// 都不能代表通过；与 payments.getStarsRevenueWithdrawalUrl 一致，先要求账号已设 2FA。
 	if !passwordState.HasPassword {
 		return nil, tgerr.New(400, "PASSWORD_MISSING")
 	}
@@ -692,7 +726,7 @@ func (r *Router) onPaymentsGetStarGiftWithdrawalURL(ctx context.Context, req *tg
 		return nil, authKeyUnregisteredErr()
 	}
 	now := r.clock.Now()
-	if err := r.deps.Account.CheckTmpPassword(ctx, userID, authKeyID, req.TmpPassword, now); err != nil {
+	if err := checkProof(userID, authKeyID, now); err != nil {
 		return nil, passwordErr(err)
 	}
 	if wait := revenueWithdrawalFreshWait(passwordState.PasswordChangedAt, now); wait < 0 {
@@ -712,7 +746,7 @@ func (r *Router) onPaymentsGetStarGiftWithdrawalURL(ctx context.Context, req *tg
 	} else if wait > 0 {
 		return nil, tgerr.New(400, fmt.Sprintf("SESSION_TOO_FRESH_%d", wait))
 	}
-	ref, ok, err := r.starGiftRefFromInput(ctx, userID, req.Stargift)
+	ref, ok, err := r.starGiftRefFromInput(ctx, userID, input)
 	if err != nil {
 		return nil, err
 	}

@@ -47,15 +47,25 @@ func (s *withdrawalRPCGifts) Withdraw(_ context.Context, req domain.StarGiftWith
 	return domain.StarGiftWithdrawal{URL: "https://links.example.test/gift-withdrawal/token"}, nil
 }
 
-// withdrawalRPCAccount accepts any tmp_password so the later admission steps
-// stay covered; TestStarGiftWithdrawalTmpPasswordGate runs the real check.
+// withdrawalRPCAccount accepts any tmp_password or SRP proof so the later
+// admission steps stay covered; TestStarGiftWithdrawalTmpPasswordGate runs the
+// real tmp_password check and the account service tests run the real SRP check.
 type withdrawalRPCAccount struct {
 	AccountService
 	checks     int
 	checked    []byte
 	checkedKey [8]byte
 	checkErr   error
+	srpChecks  int
+	srpChecked domain.PasswordCheck
+	srpErr     error
 	state      domain.RevenueWithdrawalPasswordState
+}
+
+func (s *withdrawalRPCAccount) CheckPassword(_ context.Context, _ int64, check domain.PasswordCheck) error {
+	s.srpChecks++
+	s.srpChecked = check
+	return s.srpErr
 }
 
 func (s *withdrawalRPCAccount) CheckTmpPassword(_ context.Context, _ int64, authKeyID [8]byte, tmpPassword []byte, _ time.Time) error {
@@ -118,7 +128,7 @@ func withdrawalRequest(slug string, tmpPassword []byte) *tg.PaymentsGetStarGiftW
 }
 
 func TestStarGiftWithdrawalNeedsMatchingOwnerAndKnownSlug(t *testing.T) {
-	r, userID, gifts, _, _, authKeyID := starGiftWithdrawalRouter(t)
+	r, userID, gifts, account, _, authKeyID := starGiftWithdrawalRouter(t)
 	ctx := WithAuthKeyID(WithUserID(context.Background(), userID), authKeyID)
 
 	if _, err := r.onPaymentsGetStarGiftWithdrawalURL(ctx, withdrawalRequest(
@@ -145,6 +155,9 @@ func TestStarGiftWithdrawalNeedsMatchingOwnerAndKnownSlug(t *testing.T) {
 	if got.URL == "" || gifts.calls != 1 || gifts.req.UserID != userID || gifts.req.Ref.Slug != "withdrawal-test-gift" ||
 		gifts.req.Ref.Owner != (domain.Peer{Type: domain.PeerTypeUser, ID: userID}) {
 		t.Fatalf("withdrawal = %+v req = %+v", got, gifts.req)
+	}
+	if account.srpChecks != 0 {
+		t.Fatalf("tmp_password withdrawal consulted the SRP check %d times", account.srpChecks)
 	}
 }
 
@@ -300,6 +313,111 @@ func TestStarGiftWithdrawalTmpPasswordGate(t *testing.T) {
 	}
 }
 
+func legacyWithdrawalRequest(slug string, password tg.InputCheckPasswordSRPClass) *tg.PaymentsGetStarGiftWithdrawalURLLegacyRequest {
+	return &tg.PaymentsGetStarGiftWithdrawalURLLegacyRequest{
+		Stargift: &tg.InputSavedStarGiftSlug{Slug: slug},
+		Password: password,
+	}
+}
+
+func withdrawalSRPProof() *tg.InputCheckPasswordSRP {
+	return &tg.InputCheckPasswordSRP{SRPID: 5, A: withdrawalTmpPassword(2), M1: withdrawalTmpPassword(3)}
+}
+
+// Exact 225-231 clients export with the historical SRP constructor. The
+// legacy handler checks that proof as SRP and then runs exactly the gates of
+// the Layer 232 tmp_password path; it never consults a tmp_password grant.
+func TestStarGiftLegacyWithdrawalSRPGate(t *testing.T) {
+	r, userID, gifts, account, auth, authKeyID := starGiftWithdrawalRouter(t)
+	ctx := WithAuthKeyID(WithUserID(context.Background(), userID), authKeyID)
+	slug := "withdrawal-test-gift"
+	proof := withdrawalSRPProof()
+
+	r.botStatus.Store(userID, true)
+	if _, err := r.onPaymentsGetStarGiftWithdrawalURLLegacy(ctx, legacyWithdrawalRequest(slug, proof)); !tgerr.Is(err, "BOT_METHOD_INVALID") {
+		t.Fatalf("bot err = %v, want BOT_METHOD_INVALID", err)
+	}
+	r.botStatus.Delete(userID)
+
+	// A passwordless account has nothing to prove: neither an SRP answer nor
+	// inputCheckPasswordEmpty passes the way the pre-232 handler let it.
+	account.state = domain.RevenueWithdrawalPasswordState{}
+	for _, password := range []tg.InputCheckPasswordSRPClass{proof, &tg.InputCheckPasswordEmpty{}} {
+		if _, err := r.onPaymentsGetStarGiftWithdrawalURLLegacy(ctx, legacyWithdrawalRequest(slug, password)); !tgerr.Is(err, "PASSWORD_MISSING") {
+			t.Fatalf("passwordless %T err = %v, want PASSWORD_MISSING", password, err)
+		}
+	}
+	account.state = domain.RevenueWithdrawalPasswordState{
+		HasPassword: true, PasswordChangedAt: time.Now().Add(-48 * time.Hour),
+	}
+	if _, err := r.onPaymentsGetStarGiftWithdrawalURLLegacy(ctx, legacyWithdrawalRequest(slug, &tg.InputCheckPasswordEmpty{})); !tgerr.Is(err, "PASSWORD_HASH_INVALID") {
+		t.Fatalf("empty check with 2FA err = %v, want PASSWORD_HASH_INVALID", err)
+	}
+	if account.srpChecks != 0 || gifts.calls != 0 {
+		t.Fatalf("unproven request reached the SRP check or withdrew: checks=%d calls=%d", account.srpChecks, gifts.calls)
+	}
+
+	for _, test := range []struct {
+		err  error
+		want string
+	}{
+		{domain.ErrPasswordHashInvalid, "PASSWORD_HASH_INVALID"},
+		{domain.ErrSRPIDInvalid, "SRP_ID_INVALID"},
+	} {
+		account.srpErr = test.err
+		// The failed proof hides whether the slug exists or is owned.
+		for _, target := range []string{slug, "never-minted", "owned-by-someone-else"} {
+			if _, err := r.onPaymentsGetStarGiftWithdrawalURLLegacy(ctx, legacyWithdrawalRequest(target, proof)); !tgerr.Is(err, test.want) {
+				t.Fatalf("%s with %v err = %v, want %s", target, test.err, err, test.want)
+			}
+		}
+	}
+	account.srpErr = nil
+	if gifts.calls != 0 || account.srpChecked.Empty || account.srpChecked.SRPID != proof.SRPID ||
+		!bytes.Equal(account.srpChecked.A, proof.A) || !bytes.Equal(account.srpChecked.M1, proof.M1) {
+		t.Fatalf("SRP check got %+v, calls=%d", account.srpChecked, gifts.calls)
+	}
+
+	account.state.PasswordChangedAt = time.Now().Add(-time.Hour)
+	if _, err := r.onPaymentsGetStarGiftWithdrawalURLLegacy(ctx, legacyWithdrawalRequest(slug, proof)); !tgerr.Is(err, "PASSWORD_TOO_FRESH") {
+		t.Fatalf("fresh password err = %v, want PASSWORD_TOO_FRESH", err)
+	}
+	account.state.PasswordChangedAt = time.Now().Add(-48 * time.Hour)
+	auth.authorization.CreatedAt = time.Now().Add(-time.Minute)
+	if _, err := r.onPaymentsGetStarGiftWithdrawalURLLegacy(ctx, legacyWithdrawalRequest(slug, proof)); !tgerr.Is(err, "SESSION_TOO_FRESH") {
+		t.Fatalf("fresh session err = %v, want SESSION_TOO_FRESH", err)
+	}
+	auth.authorization.CreatedAt = time.Now().Add(-48 * time.Hour)
+	auth.authorization.PasswordPending = true
+	if _, err := r.onPaymentsGetStarGiftWithdrawalURLLegacy(ctx, legacyWithdrawalRequest(slug, proof)); !tgerr.Is(err, "AUTH_KEY_UNREGISTERED") {
+		t.Fatalf("password-pending authorization err = %v, want AUTH_KEY_UNREGISTERED", err)
+	}
+	auth.authorization.PasswordPending = false
+
+	if _, err := r.onPaymentsGetStarGiftWithdrawalURLLegacy(ctx, legacyWithdrawalRequest("owned-by-someone-else", proof)); !tgerr.Is(err, "STARGIFT_OWNER_INVALID") {
+		t.Fatalf("foreign owner err = %v, want STARGIFT_OWNER_INVALID", err)
+	}
+	if _, err := r.onPaymentsGetStarGiftWithdrawalURLLegacy(ctx, legacyWithdrawalRequest("never-minted", proof)); !tgerr.Is(err, "STARGIFT_INVALID") {
+		t.Fatalf("unknown slug err = %v, want STARGIFT_INVALID", err)
+	}
+	if gifts.calls != 0 {
+		t.Fatalf("gated legacy requests withdrew: calls=%d", gifts.calls)
+	}
+
+	got, err := r.onPaymentsGetStarGiftWithdrawalURLLegacy(ctx, legacyWithdrawalRequest(slug, proof))
+	if err != nil || got.URL == "" || gifts.calls != 1 || gifts.req.UserID != userID || gifts.req.Ref.Slug != slug {
+		t.Fatalf("legacy withdrawal = %+v err=%v calls=%d req=%+v", got, err, gifts.calls, gifts.req)
+	}
+	if account.checks != 0 {
+		t.Fatalf("legacy withdrawal consulted tmp_password %d times", account.checks)
+	}
+
+	gifts.err = domain.ErrStarGiftExportCooldown
+	if _, err := r.onPaymentsGetStarGiftWithdrawalURLLegacy(ctx, legacyWithdrawalRequest(slug, proof)); !tgerr.Is(err, "STARGIFT_WITHDRAWAL_UNAVAILABLE") {
+		t.Fatalf("cooldown err = %v, want STARGIFT_WITHDRAWAL_UNAVAILABLE", err)
+	}
+}
+
 func layer231WithdrawalWire(password bin.Encoder) []byte {
 	// payments.getStarGiftWithdrawalUrl#d06e93a8 stargift:InputSavedStarGift
 	// password:InputCheckPasswordSRP, as every 225-231 client still sends it.
@@ -315,7 +433,8 @@ func layer231WithdrawalWire(password bin.Encoder) []byte {
 }
 
 func TestStarGiftWithdrawalExactLayerAdmission(t *testing.T) {
-	r, _, _, _, _, _ := starGiftWithdrawalRouter(t)
+	r, userID, gifts, account, _, authKeyID := starGiftWithdrawalRouter(t)
+	ctx := WithAuthKeyID(WithUserID(context.Background(), userID), authKeyID)
 	request := withdrawalRequest("withdrawal-test-gift", withdrawalTmpPassword(9))
 	wire := encodeExactLayerRPC(t, tlprofile.Profile232, request)
 	if id := binary.LittleEndian.Uint32(wire.Buf); id != 0xc8ca817b {
@@ -336,23 +455,51 @@ func TestStarGiftWithdrawalExactLayerAdmission(t *testing.T) {
 		t.Fatalf("Layer 232 withdrawal admitted as %q, registered=%v", method, r.dispatcher.Has(admitted.Call().Method()))
 	}
 
-	// td rejects the historical SRP constructor at admission instead of
-	// dropping the proof. It surfaces as ErrUnknownRPCMethod, which the edge
-	// logs as "Unhandled RPC admission (compatibility trace)" and answers
-	// NOT_IMPLEMENTED; no handler can see it as an empty tmp_password.
+	// td admits the historical SRP constructor as its own legacy method, so the
+	// proof reaches the SRP handler intact; it is never an empty tmp_password.
 	for profile := tlprofile.Profile225; profile <= tlprofile.Profile231; profile++ {
-		for _, password := range []bin.Encoder{
-			&tg.InputCheckPasswordSRP{SRPID: 1, A: withdrawalTmpPassword(2), M1: withdrawalTmpPassword(3)},
-			&tg.InputCheckPasswordEmpty{},
-		} {
+		for _, password := range []tg.InputCheckPasswordSRPClass{withdrawalSRPProof(), &tg.InputCheckPasswordEmpty{}} {
 			raw := layer231WithdrawalWire(password)
 			legacy := bin.Buffer{Buf: append([]byte(nil), raw...)}
-			if _, err := r.AdmitLayer(profile, &legacy, tlprofile.Limits{}); !errors.Is(err, tlprofile.ErrUnknownRPCMethod) ||
-				!bytes.Equal(legacy.Raw(), raw) {
-				t.Fatalf("Layer %d %T withdrawal admission err = %v (input consumed=%v), want ErrUnknownRPCMethod",
-					profile, password, err, !bytes.Equal(legacy.Raw(), raw))
+			admitted, err := r.AdmitLayer(profile, &legacy, tlprofile.Limits{})
+			if err != nil {
+				t.Fatalf("Layer %d %T withdrawal admission: %v", profile, password, err)
+			}
+			if _, method, _ := tlprofile.SemanticName(admitted.Call().Method()); method != "payments.getStarGiftWithdrawalUrlLegacy" ||
+				admitted.Call().WireID() != 0xd06e93a8 || !r.dispatcher.Has(admitted.Call().Method()) {
+				t.Fatalf("Layer %d withdrawal admitted as %q/%#x, registered=%v",
+					profile, method, admitted.Call().WireID(), r.dispatcher.Has(admitted.Call().Method()))
+			}
+			before := account.srpChecks
+			calls := gifts.calls
+			result, err := r.dispatcher.Dispatch(ctx, admitted)
+			if _, empty := password.(*tg.InputCheckPasswordEmpty); empty {
+				if !tgerr.Is(err, "PASSWORD_HASH_INVALID") || account.srpChecks != before || gifts.calls != calls {
+					t.Fatalf("Layer %d empty check err = %v (srp checks %d->%d, calls %d->%d)",
+						profile, err, before, account.srpChecks, calls, gifts.calls)
+				}
+				continue
+			}
+			if err != nil || account.srpChecks != before+1 || gifts.calls != calls+1 {
+				t.Fatalf("Layer %d SRP withdrawal err = %v (srp checks %d->%d, calls %d->%d)",
+					profile, err, before, account.srpChecks, calls, gifts.calls)
+			}
+			var out bin.Buffer
+			if err := result.Encode(&out); err != nil {
+				t.Fatalf("Layer %d withdrawal result encode: %v", profile, err)
 			}
 		}
+	}
+	if account.checks != 0 {
+		t.Fatalf("historical withdrawals consulted tmp_password %d times", account.checks)
+	}
+
+	// Each exact historical profile still admits only its own wire ID.
+	modern := encodeExactLayerRPC(t, tlprofile.Profile232, request)
+	raw := append([]byte(nil), modern.Buf...)
+	if _, err := r.AdmitLayer(tlprofile.Profile231, &modern, tlprofile.Limits{}); !errors.Is(err, tlprofile.ErrUnknownRPCMethod) ||
+		!bytes.Equal(modern.Raw(), raw) {
+		t.Fatalf("Layer 231 admitted the Layer 232 withdrawal: %v", err)
 	}
 }
 
