@@ -460,6 +460,7 @@ type AccountService interface {
 	GetPasswordSettings(ctx context.Context, userID int64, check domain.PasswordCheck) (domain.PrivatePasswordSettings, error)
 	UpdatePasswordSettings(ctx context.Context, userID int64, check domain.PasswordCheck, input domain.PasswordInputSettings) error
 	CheckPassword(ctx context.Context, userID int64, check domain.PasswordCheck) error
+	CheckTmpPassword(ctx context.Context, userID int64, tmpPassword []byte) error
 	RevenueWithdrawalPasswordState(ctx context.Context, userID int64) (domain.RevenueWithdrawalPasswordState, error)
 	RequestPasswordRecovery(ctx context.Context, userID int64) (string, error)
 	CheckRecoveryPassword(ctx context.Context, userID int64, code string) error

@@ -681,18 +681,20 @@ func (r *Router) onPaymentsGetStarGiftWithdrawalURL(ctx context.Context, req *tg
 	if err != nil {
 		return nil, internalErr()
 	}
-	// checkSRP 只在“已设密码”时认 SRP，在“未设密码”时只认 inputCheckPasswordEmpty，
-	// 所以这里不单设 PASSWORD_MISSING，保持与 account 域的既有判定一致。
-	if err := r.deps.Account.CheckPassword(ctx, userID, domainPasswordCheck(req.Password)); err != nil {
+	// Layer 232 的 2FA 证明是 account.getTmpPassword 签发的 tmp_password。空值只是
+	// “没有证明”，不能再像 inputCheckPasswordEmpty 那样代表未设密码账号通过；
+	// 与 payments.getStarsRevenueWithdrawalUrl 一致，先要求账号已设 2FA。
+	if !passwordState.HasPassword {
+		return nil, tgerr.New(400, "PASSWORD_MISSING")
+	}
+	if err := r.deps.Account.CheckTmpPassword(ctx, userID, req.TmpPassword); err != nil {
 		return nil, passwordErr(err)
 	}
 	now := r.clock.Now()
-	if passwordState.HasPassword {
-		if wait := revenueWithdrawalFreshWait(passwordState.PasswordChangedAt, now); wait < 0 {
-			return nil, internalErr()
-		} else if wait > 0 {
-			return nil, tgerr.New(400, fmt.Sprintf("PASSWORD_TOO_FRESH_%d", wait))
-		}
+	if wait := revenueWithdrawalFreshWait(passwordState.PasswordChangedAt, now); wait < 0 {
+		return nil, internalErr()
+	} else if wait > 0 {
+		return nil, tgerr.New(400, fmt.Sprintf("PASSWORD_TOO_FRESH_%d", wait))
 	}
 	authKeyID, ok := AuthKeyIDFrom(ctx)
 	if !ok || authKeyID == ([8]byte{}) {

@@ -361,3 +361,15 @@ func verifierForPassword(algo domain.PasswordKDFAlgo, password []byte) []byte {
 	x := new(big.Int).SetBytes(passwordDigest(algo, password))
 	return padToHash(new(big.Int).Exp(g, x, p).Bytes())
 }
+
+func TestCheckTmpPasswordFailsClosedWithoutIssuer(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(memory.NewPasswordStore())
+	// No account.getTmpPassword issuer exists, so no value is a proof: not the
+	// empty value, and not bytes that happen to look like a token.
+	for _, tmp := range [][]byte{nil, {}, bytes.Repeat([]byte{9}, 32)} {
+		if err := svc.CheckTmpPassword(ctx, 1001, tmp); !errors.Is(err, domain.ErrTmpPasswordInvalid) {
+			t.Fatalf("CheckTmpPassword(%x) = %v, want ErrTmpPasswordInvalid", tmp, err)
+		}
+	}
+}

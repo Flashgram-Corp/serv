@@ -44,6 +44,7 @@ var (
 	ErrPasswordHashInvalid     = errors.New("password hash invalid")
 	ErrSRPIDInvalid            = errors.New("srp id invalid")
 	ErrSRPPasswordChanged      = errors.New("srp password changed")
+	ErrTmpPasswordInvalid      = errors.New("tmp password invalid")
 	ErrNewSettingsInvalid      = errors.New("new password settings invalid")
 	ErrNewSaltInvalid          = errors.New("new password salt invalid")
 	ErrPasswordRecoveryNA      = errors.New("password recovery not available")
