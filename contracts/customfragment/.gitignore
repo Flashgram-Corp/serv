@@ -1,0 +1,14 @@
+# Acton toolchain and generated outputs.
+.acton/
+build/
+dist/
+gen/
+coverage.txt
+lcov.info
+
+# Deployment secrets and local wallets must never be committed.
+.env
+*.mnemonic
+wallets.toml
+global.wallets.toml
+global.libraries.toml

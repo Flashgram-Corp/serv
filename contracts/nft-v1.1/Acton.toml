@@ -1,0 +1,29 @@
+[package]
+name = "gramsrv-nft-v1-1"
+description = "Vendored TON reference NFT v1.1 contracts from ton-blockchain/acton-contracts"
+version = "0.1.0"
+license = "MIT"
+
+[toolchain]
+acton = "1.1.0"
+
+[contracts.NftCollection]
+src = "contracts/NftCollection.tolk"
+depends = ["NftItem"]
+
+[contracts.NftItem]
+src = "contracts/NftItem.tolk"
+depends = []
+
+[test]
+fail-fast = false
+
+[scripts]
+test-nft = "acton test tests"
+
+[import-mappings]
+acton = ".acton"
+contracts = "contracts"
+gen = "gen"
+tests = "tests"
+wrappers = "wrappers"

@@ -418,6 +418,10 @@ body always contains the **common command fields** (`command_id`, `reason`,
 | `upsert-premium-plan` | `months` (int), `duration_days` (int), `amount_stars` (int64), `fiat_currency` (string), `fiat_amount` (int64), `store_product` (string), `store_quantity` (int), `enabled` (bool), `sort_order` (int), `label` (string), `expected_version` (int64) | `premium.manage` |
 | `grant-stars` | `user_id` (int64), `amount` (int64) | — |
 | `debit-stars` | `user_id` (int64), `amount` (int64, 1..1000000000); insufficient balance rejects the debit | — |
+| `grant-wallet-gram` | `user_id` (int64), `amount` (float64, gram; 1 gram = 1e9 nanoton) | `premium.manage` |
+| `transfer-wallet-gram` | `from_user_id` (int64), `to_user_id` (int64), `amount` (float64, gram; 1 gram = 1e9 nanoton) | `premium.manage` |
+| `reclaim-wallet-gram` | `user_id` (int64), `amount` (float64, gram; 1 gram = 1e9 nanoton); a reclaim of more than the account holds is refused | `premium.manage` |
+| `set-gram-usd-rate` | `rate_micro` (int64, micro-USD per 1 gram, 1..1000000000000) | `prices.manage` |
 | `set-verified` | `user_id` (int64), `verified` (bool) | — |
 | `set-account-flags` | `user_id` (int64), `scam` (bool), `fake` (bool) | — |
 | `set-support` | `user_id` (int64), `support` (bool) | — |

@@ -1,0 +1,8 @@
+-- This migration was recorded in schema_migrations by a previous build but
+-- the file was missing from deploy/migrations. It is a no-op placeholder so
+-- the migration system can reconcile the recorded version.
+--
+-- The file has to keep existing under this exact version: golang-migrate
+-- checks that the migration set contains the version a database currently
+-- records before it migrates up, and a database that records this version
+-- would otherwise fail to start.

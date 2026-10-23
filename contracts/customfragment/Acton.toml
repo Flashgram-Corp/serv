@@ -1,0 +1,34 @@
+[package]
+name = "customfragment"
+version = "0.1.0"
+description = "Gramsrv CustomFragment NFT collection and item contracts"
+license = "GPL-3.0-or-later"
+
+[toolchain]
+acton = "1.1.0"
+
+[contracts.CustomFragmentCollection]
+display-name = "CustomFragmentCollection"
+src = "contracts/CustomFragmentCollection.tolk"
+depends = []
+
+[contracts.CustomFragmentItem]
+display-name = "CustomFragmentItem"
+src = "contracts/CustomFragmentItem.tolk"
+depends = []
+
+[test]
+
+[scripts]
+deploy-mainnet = "acton script scripts/deploy-mainnet.tolk --net mainnet --explorer tonviewer"
+
+[fmt]
+width = 100
+ignore = []
+
+[import-mappings]
+acton = ".acton"
+contracts = "contracts"
+gen = "gen"
+tests = "tests"
+wrappers = "wrappers"

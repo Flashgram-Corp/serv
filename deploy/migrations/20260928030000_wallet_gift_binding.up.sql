@@ -19,7 +19,6 @@ DECLARE
     gift_owner_type text;
     gift_owner_id bigint;
     gift_owner_address text;
-    gift_item_address text;
     gift_burned boolean;
     gift_craft_chance integer;
     saved_status text;
@@ -36,9 +35,9 @@ BEGIN
         RETURN NULL;
     END IF;
 
-    SELECT usg.owner_peer_type, usg.owner_peer_id, usg.owner_address, usg.gift_address, usg.burned,
+    SELECT usg.owner_peer_type, usg.owner_peer_id, usg.owner_address, usg.burned,
            usg.craft_chance_permille
-      INTO gift_owner_type, gift_owner_id, gift_owner_address, gift_item_address, gift_burned,
+      INTO gift_owner_type, gift_owner_id, gift_owner_address, gift_burned,
            gift_craft_chance
       FROM public.unique_star_gifts AS usg
      WHERE usg.id = v_unique_gift_id;
@@ -60,7 +59,7 @@ BEGIN
             RAISE EXCEPTION 'burned unique star gift has live saved aggregate';
         END IF;
     ELSIF gift_owner_address <> '' THEN
-        IF saved_status <> 'exported' THEN
+        IF saved_status NOT IN ('active', 'exported') THEN
             RAISE EXCEPTION 'exported unique star gift has non-exported saved aggregate';
         END IF;
     ELSIF saved_status <> 'active'
