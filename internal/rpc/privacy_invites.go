@@ -16,7 +16,9 @@ import (
 // may be added is decided only by its bot_nochats setting (/setjoingroups),
 // enforced by the membership write (BOT_GROUPS_BLOCKED). Evaluating the rule
 // would test the inviter against the bot's own contact list, which a bot never
-// has, so the contacts-only default made every bot uninvitable.
+// has, so the contacts-only default made every bot uninvitable. A failed bot
+// lookup aborts the invite before any membership write instead of silently
+// evaluating the bot as a human target.
 func (r *Router) filterChatInvitePrivacy(ctx context.Context, inviterUserID int64, targetUserIDs []int64) ([]int64, []tg.MissingInvitee, error) {
 	if len(targetUserIDs) == 0 {
 		return nil, nil, nil
@@ -27,7 +29,11 @@ func (r *Router) filterChatInvitePrivacy(ctx context.Context, inviterUserID int6
 	visible := make(map[int64]bool, len(targetUserIDs))
 	humans := make([]int64, 0, len(targetUserIDs))
 	for _, targetUserID := range targetUserIDs {
-		if r.userIsBot(ctx, targetUserID) {
+		bot, _, err := r.lookupUserBotStatus(ctx, targetUserID)
+		if err != nil {
+			return nil, nil, err
+		}
+		if bot {
 			visible[targetUserID] = true
 			continue
 		}
