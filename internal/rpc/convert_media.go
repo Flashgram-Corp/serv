@@ -236,10 +236,28 @@ func tgWebPage(w domain.MessageWebPage) tg.WebPageClass {
 				}
 			}
 		}
+		var attrs []tg.WebPageAttributeClass
 		if w.ComposeToneEmojiID != 0 {
-			page.SetAttributes([]tg.WebPageAttributeClass{
-				&tg.WebPageAttributeAiComposeTone{EmojiID: w.ComposeToneEmojiID},
+			attrs = append(attrs, &tg.WebPageAttributeAiComposeTone{EmojiID: w.ComposeToneEmojiID})
+		}
+		if w.UniqueGift != nil {
+			attrs = append(attrs, &tg.WebPageAttributeUniqueStarGift{Gift: tgUniqueStarGift(*w.UniqueGift)})
+		}
+		if len(w.CollectionIcons) > 0 {
+			icons := make([]tg.DocumentClass, 0, len(w.CollectionIcons))
+			for _, d := range w.CollectionIcons {
+				icons = append(icons, tgDocument(d))
+			}
+			attrs = append(attrs, &tg.WebPageAttributeStarGiftCollection{Icons: icons})
+		}
+		if w.AuctionGift != nil {
+			attrs = append(attrs, &tg.WebPageAttributeStarGiftAuction{
+				Gift:    tgStarGift(*w.AuctionGift, int64(w.Date)),
+				EndDate: w.AuctionEndDate,
 			})
+		}
+		if len(attrs) > 0 {
+			page.SetAttributes(attrs)
 		}
 		return page
 	case domain.MessageWebPageStateEmpty:
