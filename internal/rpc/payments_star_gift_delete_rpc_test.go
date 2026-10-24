@@ -100,3 +100,30 @@ func TestPaymentsDeleteStarGiftMapsStoreFailure(t *testing.T) {
 		t.Fatalf("owner err = %v, want STARGIFT_OWNER_INVALID", err)
 	}
 }
+
+// deletedStarGiftRPCGifts resolves the ref to a gift that was already deleted.
+type deletedStarGiftRPCGifts struct {
+	GiftsService
+	owner int64
+}
+
+func (s *deletedStarGiftRPCGifts) GetSaved(_ context.Context, ref domain.SavedStarGiftRef) (domain.SavedStarGift, bool, error) {
+	return domain.SavedStarGift{
+		ID: 11, Owner: domain.Peer{Type: domain.PeerTypeUser, ID: s.owner}, MsgID: ref.MsgID, FromUserID: s.owner + 1,
+		GiftID: 5, LifecycleStatus: domain.StarGiftLifecycleDeleted, Unsaved: true,
+	}, true, nil
+}
+
+func TestStarGiftUpgradeFormRefusesDeletedGift(t *testing.T) {
+	r, sender, _, _ := starGiftTestRouter(t)
+	r.deps.Gifts = &deletedStarGiftRPCGifts{owner: sender.ID}
+	ctx := WithUserID(context.Background(), sender.ID)
+
+	// The preview is never consulted: the embedded nil GiftsService would panic.
+	_, err := r.starGiftUpgradePaymentForm(ctx, sender.ID, &tg.InputInvoiceStarGiftUpgrade{
+		Stargift: &tg.InputSavedStarGiftUser{MsgID: 4242},
+	})
+	if !tgerr.Is(err, "STARGIFT_INVALID") {
+		t.Fatalf("upgrade form for a deleted gift err = %v, want STARGIFT_INVALID", err)
+	}
+}

@@ -405,6 +405,11 @@ func (s *StarGiftUpgradeStore) UpgradeStarGift(ctx context.Context, req domain.S
 			if locked.UniqueGiftID != 0 {
 				return domain.ErrStarGiftAlreadyUpgraded
 			}
+			// A deleted gift keeps its row for the audit trail but has left the
+			// profile; it is no longer something the owner can upgrade.
+			if !locked.LifecycleStatus.Live() {
+				return domain.ErrStarGiftNotFound
+			}
 
 			revision, err := lockActiveCollectibleRevision(ctx, tx, locked.GiftID)
 			if err != nil {

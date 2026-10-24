@@ -156,6 +156,104 @@ func TestStarGiftDeleteRefusesUpgradedGiftPostgres(t *testing.T) {
 	}
 }
 
+// TestStarGiftDeleteBlocksLaterUpgradePostgres pins the other direction: a
+// deleted gift keeps its row, but a paid upgrade must refuse it under the row
+// lock instead of charging Stars against a gift that left the profile.
+func TestStarGiftDeleteBlocksLaterUpgradePostgres(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	suffix := randomSuffix(t)
+	now := int(time.Now().Unix())
+	users := NewUserStore(pool)
+	owner := createTestUser(t, ctx, users, "+1887"+suffix+"01", "DeletedOwner", "")
+	sender := createTestUser(t, ctx, users, "+1887"+suffix+"02", "DeletedSender", "")
+	ownerPeer := domain.Peer{Type: domain.PeerTypeUser, ID: owner.ID}
+
+	gifts := NewStarGiftStore(pool)
+	baseDocumentID := time.Now().UnixNano() & 0x7ffffffffffff000
+	entry, err := gifts.CreateCatalogRevision(ctx, domain.StarGiftCatalogWrite{
+		Title: "Delete upgrade " + suffix, Stars: 50, ConvertStars: 0, Enabled: true,
+		Document: collectibleTestDocument(baseDocumentID, "delete-upgrade.tgs"),
+		Blob:     collectibleTestBlob(baseDocumentID, "delete-upgrade"), Animation: collectibleTestAnimation("delete-upgrade.tgs"),
+		Actor: "integration", CommandID: "delete-upgrade-catalog-" + suffix,
+	})
+	if err != nil {
+		t.Fatalf("create delete catalog: %v", err)
+	}
+	if _, err := gifts.PublishCollectibleRevision(ctx, domain.StarGiftCollectibleWrite{
+		GiftID: entry.Gift.ID, UpgradeStars: 100, SupplyTotal: 5, SlugPrefix: "delup-" + suffix,
+		Models: []domain.StarGiftCollectibleAttribute{{
+			Kind: domain.StarGiftCollectibleModel, Name: "Base", RarityKind: domain.StarGiftRarityPermille, RarityPermille: 1000,
+			Document: collectibleTestDocumentPtr(baseDocumentID+1, "model.tgs"), Blob: collectibleTestBlobPtr(baseDocumentID+1, "model"), Animation: collectibleTestAnimationPtr("model.tgs"),
+		}},
+		Patterns: []domain.StarGiftCollectibleAttribute{{
+			Kind: domain.StarGiftCollectiblePattern, Name: "Orbit", RarityKind: domain.StarGiftRarityPermille, RarityPermille: 1000,
+			Document: collectibleTestPatternDocumentPtr(baseDocumentID+2, "pattern.tgs"), Blob: collectibleTestBlobPtr(baseDocumentID+2, "pattern"), Animation: collectibleTestAnimationPtr("pattern.tgs"),
+		}},
+		Backdrops: []domain.StarGiftCollectibleAttribute{{
+			Kind: domain.StarGiftCollectibleBackdrop, Name: "Night", BackdropID: 91, RarityKind: domain.StarGiftRarityPermille, RarityPermille: 1000,
+			CenterColor: 0x112233, EdgeColor: 0x223344, PatternColor: 0x334455, TextColor: 0xffffff,
+		}, {
+			Kind: domain.StarGiftCollectibleBackdrop, Name: "Day", BackdropID: 92, RarityKind: domain.StarGiftRarityPermille, RarityPermille: 500,
+			CenterColor: 0xaabbcc, EdgeColor: 0x778899, PatternColor: 0xddeeff, TextColor: 0x111111,
+		}},
+		Actor: "integration", CommandID: "delete-upgrade-pool-" + suffix,
+	}); err != nil {
+		t.Fatalf("publish delete pool: %v", err)
+	}
+
+	messages := NewMessageStore(pool)
+	saved := createCollectibleSavedGift(t, ctx, messages, gifts, entry.Gift, domain.SavedStarGift{
+		Owner: ownerPeer, FromUserID: sender.ID, GiftID: entry.Gift.ID, RevisionID: entry.Gift.RevisionID,
+		Date: now, ConvertStars: 0, Message: "deleted gift",
+	})
+	lifecycle := NewStarGiftLifecycleStore(pool, messages, 1_000_000)
+	ref := domain.SavedStarGiftRef{Owner: ownerPeer, MsgID: saved.MsgID}
+	if _, err := lifecycle.DeleteStarGift(ctx, domain.StarGiftDeleteRequest{UserID: owner.ID, Ref: ref, Date: now}); err != nil {
+		t.Fatalf("delete plain gift: %v", err)
+	}
+	stars := NewStarsStore(pool)
+	if _, _, err := stars.EnsureGrant(ctx, owner.ID, 1000, now); err != nil {
+		t.Fatalf("grant upgrade stars: %v", err)
+	}
+	before, err := stars.GetBalance(ctx, owner.ID)
+	if err != nil {
+		t.Fatalf("read balance: %v", err)
+	}
+	upgrades := NewStarGiftUpgradeStore(pool, messages)
+	if _, err := upgrades.UpgradeStarGift(ctx, domain.StarGiftUpgradeRequest{
+		UserID: owner.ID, Ref: ref, ChargeStars: 100, FormID: 8802,
+		CommandKey: "delete-then-upgrade-" + suffix, Date: now + 1,
+	}); !errors.Is(err, domain.ErrStarGiftNotFound) {
+		t.Fatalf("upgrade deleted gift err = %v, want ErrStarGiftNotFound", err)
+	}
+	after, err := stars.GetBalance(ctx, owner.ID)
+	if err != nil {
+		t.Fatalf("read balance: %v", err)
+	}
+	if after.Balance != before.Balance {
+		t.Fatalf("balance %d -> %d, want unchanged", before.Balance, after.Balance)
+	}
+	var status string
+	var uniqueGiftID *int64
+	if err := pool.QueryRow(ctx, `SELECT lifecycle_status, unique_gift_id FROM peer_star_gifts WHERE id = $1`, saved.ID).Scan(&status, &uniqueGiftID); err != nil {
+		t.Fatalf("read deleted gift: %v", err)
+	}
+	if status != string(domain.StarGiftLifecycleDeleted) || uniqueGiftID != nil {
+		t.Fatalf("deleted gift = %q unique=%v, want deleted without a collectible", status, uniqueGiftID)
+	}
+	var minted, commands int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM unique_star_gifts WHERE gift_id = $1`, entry.Gift.ID).Scan(&minted); err != nil {
+		t.Fatalf("count collectibles: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM star_gift_upgrade_commands WHERE source_saved_gift_id = $1`, saved.ID).Scan(&commands); err != nil {
+		t.Fatalf("count upgrade commands: %v", err)
+	}
+	if minted != 0 || commands != 0 {
+		t.Fatalf("collectibles=%d upgrade commands=%d after a refused upgrade, want 0/0", minted, commands)
+	}
+}
+
 // TestStarGiftDeleteRefreshesCollectionHashPostgres pins the collection side of
 // payments.deleteStarGift: removing the membership must refresh the stored
 // collection hash under the owner advisory lock, otherwise

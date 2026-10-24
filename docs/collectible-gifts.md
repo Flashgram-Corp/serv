@@ -68,21 +68,19 @@ Preconditions are checked in this order, because each later one would otherwise
 reveal state to a caller who has not proven who they are:
 
 1. Known method, non-bot caller (`BOT_METHOD_INVALID`).
-2. Layer 232 replaced the SRP challenge with a temporary password: the request
-   carries `tmp_password:bytes` instead of `inputCheckPasswordSRP`. This server
-   issues no temporary passwords (there is no `account.getTmpPassword` surface),
-   so a non-empty `tmp_password` cannot be verified and is refused with
-   `PASSWORD_INVALID`. An empty `tmp_password` keeps the historical
-   "no password supplied" semantics: `checkSRP` accepts the empty check only on
-   accounts without a password, and only a real SRP answer on accounts with
-   one. Wrong answer → `PASSWORD_HASH_INVALID`, stale `srp_id` →
-   `SRP_ID_INVALID`.
-   Historical profiles (Layer 225–231) still send the SRP challenge; the
-   profile-to-canonical conversion discards it instead of promoting it into a
-   temporary password, so those clients reach the same empty-password check.
-3. Freshness, only when the account has a password: `PASSWORD_TOO_FRESH_<wait>`
-   for a recently changed password and `SESSION_TOO_FRESH_<wait>` for a session
-   that is younger than the same window (`revenueWithdrawalFreshWait`).
+2. The account must have a 2FA password; without one there is nothing to
+   prove and the call fails with `PASSWORD_MISSING`.
+3. The 2FA proof. Layer 232 carries `tmp_password:bytes`: it must be the grant
+   that `account.getTmpPassword` issued to this authorization, still within
+   its `valid_until`, on the same login and under the current 2FA password;
+   anything else, empty included, is `TMP_PASSWORD_INVALID`. There is no SRP
+   fallback. Exact Layer 225–231 clients call
+   `payments.getStarGiftWithdrawalUrlLegacy` with the SRP challenge, and only
+   `inputCheckPasswordSRP` is accepted there. Wrong answer →
+   `PASSWORD_HASH_INVALID`, stale `srp_id` → `SRP_ID_INVALID`.
+   Freshness follows the proof: `PASSWORD_TOO_FRESH_<wait>` for a recently
+   changed password and `SESSION_TOO_FRESH_<wait>` for a session that is
+   younger than the same window (`revenueWithdrawalFreshWait`).
 4. The auth key exists, belongs to the caller, and is not `password_pending`
    (`AUTH_KEY_UNREGISTERED`).
 5. The gift ref resolves and the caller is its owner (`STARGIFT_INVALID`,
@@ -141,6 +139,9 @@ Bool`. The owner removes a received gift from the profile.
 - Refused states (`STARGIFT_INVALID`): converted, exported, burned, already
   deleted, upgraded into a collectible, limited/auction release, still
   convertible or prepaid.
+- A deleted gift cannot be upgraded afterwards either: the upgrade form refuses
+  it (`STARGIFT_INVALID`) and the upgrade transaction re-checks the lifecycle
+  under the row lock, so no Stars are charged and no collectible is minted.
 - The gift is dropped from every collection it was part of under the owner
   collection advisory lock, the affected collection hashes are refreshed (so
   `payments.getStarGiftCollections` cannot answer `NotModified` for a changed
