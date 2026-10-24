@@ -830,7 +830,7 @@ type StarGiftWithdrawalRequest struct {
 }
 
 // StarGiftDeleteRequest 是 payments.deleteStarGift 的输入：调用者要删掉自己
-// 收到的那份礼物（普通礼物或已升级的藏品）。
+// 收到的那份普通礼物。已升级的藏品、限量/拍卖礼物以及仍带 Stars 的礼物不可删除。
 type StarGiftDeleteRequest struct {
 	UserID int64
 	Ref    SavedStarGiftRef
@@ -1265,7 +1265,7 @@ var (
 	ErrStarGiftTransferUnavailable    = errors.New("stargift: transfer unavailable")
 	ErrStarGiftResaleUnavailable      = errors.New("stargift: resale unavailable")
 	// ErrStarGiftDeleteUnavailable 表示这份礼物当前不可删除：已转换、已导出、
-	// 已升级成藏品、正在出售、有待处理报价或已被删除。
+	// 已升级成藏品、限量或拍卖礼物、仍带转换价或预付升级 Stars、已被删除。
 	ErrStarGiftDeleteUnavailable = errors.New("stargift: delete unavailable")
 	ErrStarGiftOfferInvalid      = errors.New("stargift: offer invalid")
 	ErrStarGiftOfferExpired      = errors.New("stargift: offer expired")

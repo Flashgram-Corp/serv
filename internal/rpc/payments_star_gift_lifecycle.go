@@ -666,8 +666,12 @@ func (r *Router) onPaymentsTransferStarGift(ctx context.Context, req *tg.Payment
 }
 
 // onPaymentsDeleteStarGift implements payments.deleteStarGift (Layer 232).
-// 只有礼物主人能删自己的那份礼物；礼物离开资料页，已经升级成的藏品同时作废，
-// 不能再上架或导出。删除不硬删行：升级命令、报价、转账记录都引用这一行。
+// 只有礼物主人能删自己的那份普通礼物：礼物离开资料页，同时退出所属集合。
+// 已升级的藏品、限量/拍卖礼物以及仍带转换价或预付升级 Stars 的礼物一律拒绝
+// （STARGIFT_INVALID），因为删除不可逆、会连带销毁这些 Stars。删除不硬删行：
+// 升级命令、报价、转账记录都引用这一行。频道礼物属于频道资产，不走个人删除
+// 路径（STARGIFT_OWNER_INVALID）；频道方删除需要频道所有权/转账权限语义，
+// 目前尚未实现。
 func (r *Router) onPaymentsDeleteStarGift(ctx context.Context, req *tg.PaymentsDeleteStarGiftRequest) (bool, error) {
 	if req == nil {
 		return false, inputRequestInvalidErr()
@@ -689,7 +693,8 @@ func (r *Router) onPaymentsDeleteStarGift(ctx context.Context, req *tg.PaymentsD
 	if !ok {
 		return false, starGiftInvalidErr()
 	}
-	// 频道礼物属于频道资产，不走个人删除路径。
+	// 频道礼物属于频道资产：官方客户端允许有转账权限的频道主/管理员删除，
+	// 这需要另一套频道所有权检查，本方法明确不覆盖，继续按个人删除路径拒绝。
 	if ref.Owner.Type != domain.PeerTypeUser || ref.Owner.ID != userID {
 		return false, tgerr.New(400, "STARGIFT_OWNER_INVALID")
 	}

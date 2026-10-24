@@ -113,11 +113,25 @@ Bool`. The owner removes a received gift from the profile.
 
 - Only the caller may delete their own gift. A channel gift is a channel asset
   and is refused (`STARGIFT_OWNER_INVALID`); bots are refused
-  (`BOT_METHOD_INVALID`).
-- Only a **plain** received gift can be deleted. A gift that was upgraded into
-  a collectible (NFT) is refused (`STARGIFT_INVALID`): destroying a
-  collectible is a different operation with its own financial rules, so this
-  method never burns one.
+  (`BOT_METHOD_INVALID`). Official clients let a channel owner or an admin with
+  transfer rights delete a channel gift; that needs a channel-ownership check
+  of its own, so this method deliberately keeps refusing it until that path
+  exists.
+- The delete is irreversible, so it is limited to a **plain** received gift
+  that carries no Stars. Refused (`STARGIFT_INVALID`):
+  - a gift upgraded into a collectible (NFT) — destroying a collectible is a
+    different operation with its own financial rules;
+  - a limited-edition or auction gift — the release is a scarce, numbered
+    object;
+  - a gift with a conversion value, or one carrying the sender's prepaid
+    upgrade Stars — deleting it would silently destroy Stars that can still be
+    claimed.
+
+  This matches TDLib's `deleteGift` preconditions (not unique,
+  `availability_total == 0`, `convert_star_count == 0`). TDLib also requires
+  "not refunded"; a saved gift is never in a refunded state here, because a
+  gift-purchase refund settles at the invoice layer before the gift is
+  delivered.
 - The gift row is **not** deleted: upgrade commands, offers and transfers
   reference it, so the delete is a lifecycle transition
   (`lifecycle_status='deleted'`, new state in migration
@@ -125,9 +139,12 @@ Bool`. The owner removes a received gift from the profile.
   `lifecycle_status='active'`, so the gift leaves the profile, the account
   rating signal and the saved-gift lists immediately.
 - Refused states (`STARGIFT_INVALID`): converted, exported, burned, already
-  deleted, upgraded into a collectible.
-- The gift is dropped from every collection it was part of, and its profile
-  projection is invalidated.
+  deleted, upgraded into a collectible, limited/auction release, still
+  convertible or prepaid.
+- The gift is dropped from every collection it was part of under the owner
+  collection advisory lock, the affected collection hashes are refreshed (so
+  `payments.getStarGiftCollections` cannot answer `NotModified` for a changed
+  membership), and the profile projection is invalidated.
 
 ## Claim page mirror (FlashFragment)
 
