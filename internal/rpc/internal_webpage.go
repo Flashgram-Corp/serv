@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"net/url"
@@ -18,6 +19,11 @@ import (
 // profiles of users, bots, channels and groups, invite links, collectible
 // gifts, gift collections and gift auctions. They are built from the
 // server's own data, never fetched over HTTP.
+//
+// A preview is stored in the message and shown to every recipient, so it
+// carries only what the public link page shows to an anonymous visitor: the
+// base profile (not the sender's contact name or personal photo), About and
+// photo only where privacy allows everybody, and no hidden gifts.
 
 const (
 	webPageTypeUser       = "telegram_user"
@@ -101,7 +107,10 @@ func parseInternalLink(raw, publicHost string) (internalLink, bool) {
 		return internalLink{}, false
 	}
 	host := strings.ToLower(u.Hostname())
-	if !aiComposeStyleHostAllowed(host, publicHost) {
+	// Only the configured public link host belongs to this server. t.me and
+	// the other AI compose hosts name real Telegram accounts; answering them
+	// from local data would show a different account under that name.
+	if publicHost == "" || !strings.EqualFold(host, publicHost) {
 		return internalLink{}, false
 	}
 	path := strings.Trim(u.Path, "/")
@@ -145,21 +154,34 @@ func parseInternalLink(raw, publicHost string) (internalLink, bool) {
 }
 
 func (r *Router) fillProfileWebPage(ctx context.Context, viewer int64, username string, page *domain.MessageWebPage) bool {
-	if svc, ok := r.deps.Users.(UserIdentityService); ok {
-		if u, found, err := svc.ResolveUsername(ctx, viewer, username); err == nil && found && !u.Deleted {
-			page.Type = webPageTypeUser
-			if u.Bot {
-				page.Type = webPageTypeBot
+	u, found, err := r.publicUserByUsername(ctx, viewer, username)
+	if err != nil {
+		return false
+	}
+	if found {
+		showAbout, showPhoto := u.Bot, u.Bot
+		if !u.Bot {
+			if showAbout, err = r.publiclyVisible(ctx, u.ID, domain.PrivacyKeyAbout); err != nil {
+				return false
 			}
-			page.Title = strings.TrimSpace(u.FirstName + " " + u.LastName)
-			page.Description = u.About
-			if u.PhotoID != 0 && r.deps.Files != nil {
-				if photo, found, err := r.deps.Files.GetPhoto(ctx, u.PhotoID); err == nil && found {
-					page.Photo = &photo
-				}
+			if showPhoto, err = r.publiclyVisible(ctx, u.ID, domain.PrivacyKeyProfilePhoto); err != nil {
+				return false
 			}
-			return page.Title != ""
 		}
+		page.Type = webPageTypeUser
+		if u.Bot {
+			page.Type = webPageTypeBot
+		}
+		page.Title = strings.TrimSpace(u.FirstName + " " + u.LastName)
+		if showAbout {
+			page.Description = u.About
+		}
+		if showPhoto && u.PhotoID != 0 && r.deps.Files != nil {
+			if photo, found, err := r.deps.Files.GetPhoto(ctx, u.PhotoID); err == nil && found {
+				page.Photo = &photo
+			}
+		}
+		return page.Title != ""
 	}
 	if r.deps.Channels == nil {
 		return false
@@ -180,7 +202,9 @@ func (r *Router) fillInviteWebPage(ctx context.Context, viewer int64, hash strin
 	if err != nil || res.Channel.ID == 0 || res.Channel.Deleted {
 		return false
 	}
-	r.fillChannelWebPage(ctx, res.Channel, res.Invite.RequestNeeded && !res.Already, page)
+	// The type follows the invite, not whether the sender is already a member:
+	// every recipient sees the same stored preview.
+	r.fillChannelWebPage(ctx, res.Channel, res.Invite.RequestNeeded, page)
 	return true
 }
 
@@ -240,11 +264,13 @@ func (r *Router) fillCollectionWebPage(ctx context.Context, viewer int64, userna
 	}
 	owner := domain.Peer{}
 	ownerName := ""
-	if svc, ok := r.deps.Users.(UserIdentityService); ok {
-		if u, found, err := svc.ResolveUsername(ctx, viewer, username); err == nil && found && !u.Deleted {
-			owner = domain.Peer{Type: domain.PeerTypeUser, ID: u.ID}
-			ownerName = strings.TrimSpace(u.FirstName + " " + u.LastName)
-		}
+	u, found, err := r.publicUserByUsername(ctx, viewer, username)
+	if err != nil {
+		return false
+	}
+	if found {
+		owner = domain.Peer{Type: domain.PeerTypeUser, ID: u.ID}
+		ownerName = strings.TrimSpace(u.FirstName + " " + u.LastName)
 	}
 	if owner.ID == 0 && r.deps.Channels != nil {
 		if ch, found, err := r.deps.Channels.ResolvePublicUsername(ctx, viewer, username); err == nil && found && !ch.Deleted {
@@ -272,7 +298,9 @@ func (r *Router) fillCollectionWebPage(ctx context.Context, viewer int64, userna
 	page.Type = webPageTypeCollection
 	page.Title = collection.Title
 	page.Description = ownerName
-	gifts, err := r.deps.Gifts.ListSavedFiltered(ctx, domain.SavedStarGiftFilter{Owner: owner, CollectionID: collectionID, Limit: 3})
+	// Hidden gifts never leave the owner's view (payments.getSavedStarGifts
+	// forces exclude_unsaved for everyone else), and this preview is public.
+	gifts, err := r.deps.Gifts.ListSavedFiltered(ctx, domain.SavedStarGiftFilter{Owner: owner, CollectionID: collectionID, ExcludeUnsaved: true, Limit: 3})
 	if err == nil {
 		for _, saved := range gifts.Gifts {
 			if doc, ok := r.savedGiftIconDocument(ctx, saved); ok {
@@ -281,6 +309,52 @@ func (r *Router) fillCollectionWebPage(ctx context.Context, viewer int64, userna
 		}
 	}
 	return true
+}
+
+// publicUserByUsername resolves a username the way the public link page does.
+// ResolveUsername keeps the frozen/deleted tombstone rules, but its result is
+// projected for the viewer (contact name, personal photo); the preview uses
+// the viewer-independent base user instead.
+func (r *Router) publicUserByUsername(ctx context.Context, viewer int64, username string) (domain.User, bool, error) {
+	svc, ok := r.deps.Users.(UserIdentityService)
+	if !ok {
+		return domain.User{}, false, nil
+	}
+	projected, found, err := svc.ResolveUsername(ctx, viewer, username)
+	if errors.Is(err, domain.ErrUsernameInvalid) {
+		// Not a username this server can hold, so not a user link.
+		return domain.User{}, false, nil
+	}
+	if err != nil {
+		return domain.User{}, false, err
+	}
+	if !found || projected.Deleted {
+		return domain.User{}, false, nil
+	}
+	base, ok := r.deps.Users.(privateSendBaseUserResolver)
+	if !ok {
+		return domain.User{}, false, fmt.Errorf("base user resolver unavailable")
+	}
+	users, err := base.BaseUsersByIDs(ctx, []int64{projected.ID})
+	if err != nil {
+		return domain.User{}, false, err
+	}
+	if len(users) != 1 || users[0].ID != projected.ID || users[0].Deleted {
+		return domain.User{}, false, nil
+	}
+	return users[0], true, nil
+}
+
+// publiclyVisible evaluates one privacy key for an anonymous viewer, the
+// audience of a stored preview. Without an evaluator nothing private is shown.
+func (r *Router) publiclyVisible(ctx context.Context, ownerUserID int64, key domain.PrivacyKey) (bool, error) {
+	evaluator, ok := r.deps.Privacy.(interface {
+		CanSeeAnonymous(ctx context.Context, ownerUserID int64, key domain.PrivacyKey) (bool, error)
+	})
+	if !ok {
+		return false, nil
+	}
+	return evaluator.CanSeeAnonymous(ctx, ownerUserID, key)
 }
 
 func (r *Router) savedGiftIconDocument(ctx context.Context, saved domain.SavedStarGift) (domain.Document, bool) {

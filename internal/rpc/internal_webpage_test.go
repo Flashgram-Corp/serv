@@ -1,11 +1,17 @@
 package rpc
 
 import (
+	"context"
 	"testing"
 
+	"github.com/iamxvbaba/td/clock"
 	"github.com/iamxvbaba/td/tg"
+	"go.uber.org/zap/zaptest"
 
+	appprivacy "telesrv/internal/app/privacy"
+	appusers "telesrv/internal/app/users"
 	"telesrv/internal/domain"
+	"telesrv/internal/store/memory"
 )
 
 func TestParseInternalLink(t *testing.T) {
@@ -30,6 +36,7 @@ func TestParseInternalLink(t *testing.T) {
 	}
 	for _, raw := range []string{
 		"https://example.com/durov",              // other site
+		"https://t.me/durov",                     // a real Telegram account, not ours
 		"https://links.example.org/",             // no path
 		"https://links.example.org/+79991234567", // phone link
 		"https://links.example.org/ab",           // too short for a username
@@ -57,5 +64,86 @@ func TestInternalWebPageAttributes(t *testing.T) {
 	}
 	if ty, _ := page.GetType(); ty != "telegram_collection" {
 		t.Fatalf("type = %q", ty)
+	}
+}
+
+// The preview is stored in the message and shown to every recipient, so it may
+// only carry what an anonymous visitor of the public link page sees -- not what
+// the sender happens to be allowed to see.
+func TestInternalProfilePreviewShowsOnlyPublicFields(t *testing.T) {
+	ctx := context.Background()
+	users := memory.NewUserStore()
+	alice, err := users.Create(ctx, domain.User{AccessHash: 81, Phone: "15550008101", FirstName: "Alice", Username: "public_alice", About: "bio for contacts"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bob, err := users.Create(ctx, domain.User{AccessHash: 82, Phone: "15550008102", FirstName: "Bob"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	contacts := memory.NewContactStore()
+	if _, err := contacts.Upsert(ctx, alice.ID, domain.ContactInput{ContactUserID: bob.ID, FirstName: "Bob"}); err != nil {
+		t.Fatal(err)
+	}
+	privacy := appprivacy.NewService(memory.NewPrivacyStore(), contacts)
+	if _, err := privacy.SetRules(ctx, alice.ID, domain.PrivacyKeyAbout, []domain.PrivacyRule{{Kind: domain.PrivacyRuleAllowContacts}}); err != nil {
+		t.Fatal(err)
+	}
+	if visible, err := privacy.CanSee(ctx, alice.ID, bob.ID, domain.PrivacyKeyAbout); err != nil || !visible {
+		t.Fatalf("bob can see alice's about = %v, %v; the test needs a viewer who may", visible, err)
+	}
+	r := New(Config{PublicBaseURL: "https://links.example.org"}, Deps{Users: appusers.NewService(users), Privacy: privacy}, zaptest.NewLogger(t), clock.System)
+	bobCtx := WithUserID(ctx, bob.ID)
+
+	page, ok := r.resolveInternalWebPage(bobCtx, "https://links.example.org/public_alice")
+	if !ok || page.Type != webPageTypeUser || page.Title != "Alice" {
+		t.Fatalf("preview = %+v ok=%v", page, ok)
+	}
+	if page.Description != "" {
+		t.Fatalf("contacts-only about leaked into the stored preview: %q", page.Description)
+	}
+
+	if _, err := privacy.SetRules(ctx, alice.ID, domain.PrivacyKeyAbout, []domain.PrivacyRule{{Kind: domain.PrivacyRuleAllowAll}}); err != nil {
+		t.Fatal(err)
+	}
+	if page, ok = r.resolveInternalWebPage(bobCtx, "https://links.example.org/public_alice"); !ok || page.Description != "bio for contacts" {
+		t.Fatalf("public about preview = %+v ok=%v", page, ok)
+	}
+	if _, ok := r.resolveInternalWebPage(bobCtx, "https://t.me/public_alice"); ok {
+		t.Fatal("a t.me link was answered from local data")
+	}
+}
+
+type collectionPreviewGifts struct {
+	GiftsService
+	filter domain.SavedStarGiftFilter
+}
+
+func (g *collectionPreviewGifts) ListCollections(_ context.Context, owner domain.Peer) ([]domain.StarGiftCollection, error) {
+	return []domain.StarGiftCollection{{Owner: owner, CollectionID: 3, Title: "Best"}}, nil
+}
+
+func (g *collectionPreviewGifts) ListSavedFiltered(_ context.Context, filter domain.SavedStarGiftFilter) (domain.SavedStarGiftPage, error) {
+	g.filter = filter
+	return domain.SavedStarGiftPage{}, nil
+}
+
+func TestInternalCollectionPreviewExcludesHiddenGifts(t *testing.T) {
+	ctx := context.Background()
+	users := memory.NewUserStore()
+	owner, err := users.Create(ctx, domain.User{AccessHash: 83, Phone: "15550008103", FirstName: "Owner", Username: "gift_owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gifts := &collectionPreviewGifts{}
+	r := New(Config{PublicBaseURL: "https://links.example.org"}, Deps{Users: appusers.NewService(users), Gifts: gifts}, zaptest.NewLogger(t), clock.System)
+
+	// The owner is the sender here: even the owner's own preview is public.
+	page, ok := r.resolveInternalWebPage(WithUserID(ctx, owner.ID), "https://links.example.org/gift_owner/c/3")
+	if !ok || page.Type != webPageTypeCollection || page.Title != "Best" {
+		t.Fatalf("collection preview = %+v ok=%v", page, ok)
+	}
+	if !gifts.filter.ExcludeUnsaved || gifts.filter.CollectionID != 3 || gifts.filter.Owner.ID != owner.ID {
+		t.Fatalf("collection icons filter = %+v, want hidden gifts excluded", gifts.filter)
 	}
 }
