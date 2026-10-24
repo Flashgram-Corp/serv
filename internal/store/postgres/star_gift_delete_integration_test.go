@@ -155,3 +155,155 @@ func TestStarGiftDeleteRefusesUpgradedGiftPostgres(t *testing.T) {
 		t.Fatalf("upgraded gift lifecycle = %q, want %q", status, domain.StarGiftLifecycleActive)
 	}
 }
+
+// TestStarGiftDeleteRefreshesCollectionHashPostgres pins the collection side of
+// payments.deleteStarGift: removing the membership must refresh the stored
+// collection hash under the owner advisory lock, otherwise
+// payments.getStarGiftCollections(hash) answers NotModified for a collection
+// that actually changed.
+func TestStarGiftDeleteRefreshesCollectionHashPostgres(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	suffix := randomSuffix(t)
+	now := int(time.Now().Unix())
+	owner := createTestUser(t, ctx, NewUserStore(pool), "+1885"+suffix+"01", "HashOwner", "")
+	revisionID, giftID := ratingTestCatalogRevision(t, pool)
+	ownerPeer := domain.Peer{Type: domain.PeerTypeUser, ID: owner.ID}
+	var keepID, deleteID int64
+	for i, dst := range []*int64{&keepID, &deleteID} {
+		if err := pool.QueryRow(ctx, `
+INSERT INTO peer_star_gifts (owner_peer_type, owner_peer_id, msg_id, gift_id, gift_date, catalog_revision_id, lifecycle_status, converted)
+VALUES ('user', $1, $2, $3, 0, $4, 'active', false) RETURNING id`, owner.ID, i+1, giftID, revisionID).Scan(dst); err != nil {
+			t.Fatalf("seed saved gift: %v", err)
+		}
+	}
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		_, _ = pool.Exec(cleanupCtx, `DELETE FROM star_gift_collection_items WHERE saved_gift_id = ANY($1::bigint[])`, []int64{keepID, deleteID})
+		_, _ = pool.Exec(cleanupCtx, `DELETE FROM star_gift_collections WHERE owner_peer_type='user' AND owner_peer_id=$1`, owner.ID)
+		_, _ = pool.Exec(cleanupCtx, `DELETE FROM peer_star_gifts WHERE id = ANY($1::bigint[])`, []int64{keepID, deleteID})
+	})
+
+	gifts := NewStarGiftStore(pool)
+	if _, err := gifts.CreateCollection(ctx, ownerPeer, "Hash", []int64{keepID, deleteID}); err != nil {
+		t.Fatalf("create collection: %v", err)
+	}
+	lifecycle := NewStarGiftLifecycleStore(pool, NewMessageStore(pool), 1_000_000)
+	if _, err := lifecycle.DeleteStarGift(ctx, domain.StarGiftDeleteRequest{
+		UserID: owner.ID, Ref: domain.SavedStarGiftRef{Owner: ownerPeer, MsgID: 2}, Date: now,
+	}); err != nil {
+		t.Fatalf("delete star gift: %v", err)
+	}
+	collections, err := gifts.ListCollections(ctx, ownerPeer)
+	if err != nil || len(collections) != 1 {
+		t.Fatalf("collections = %+v, %v", collections, err)
+	}
+	got := collections[0]
+	if len(got.GiftIDs) != 1 || got.GiftIDs[0] != keepID {
+		t.Fatalf("collection membership = %v, want [%d]", got.GiftIDs, keepID)
+	}
+	if want := domain.StarGiftCollectionHash(got.Title, got.GiftIDs); got.Hash != want {
+		t.Fatalf("stale collection hash after delete: stored %d, membership %d", got.Hash, want)
+	}
+}
+
+// TestStarGiftDeleteRefusesIrreversibleGiftsPostgres pins the eligibility rules
+// of payments.deleteStarGift: an irreversible delete is limited to a plain gift
+// that carries no Stars. Limited, auction, convertible and prepaid gifts stay
+// active and keep their value.
+func TestStarGiftDeleteRefusesIrreversibleGiftsPostgres(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	suffix := randomSuffix(t)
+	now := int(time.Now().Unix())
+	users := NewUserStore(pool)
+	owner := createTestUser(t, ctx, users, "+1886"+suffix+"01", "RefuseOwner", "")
+	ownerPeer := domain.Peer{Type: domain.PeerTypeUser, ID: owner.ID}
+	lifecycle := NewStarGiftLifecycleStore(pool, NewMessageStore(pool), 1_000_000)
+	gifts := NewStarGiftStore(pool)
+	baseDocumentID := time.Now().UnixNano() & 0x7ffffffffffff000
+	created := 0
+
+	createRevision := func(t *testing.T, write domain.StarGiftCatalogWrite) domain.StarGiftCatalogEntry {
+		t.Helper()
+		created++
+		write.Document = collectibleTestDocument(baseDocumentID+int64(created), "delete-refuse.tgs")
+		write.Blob = collectibleTestBlob(baseDocumentID+int64(created), "delete-refuse")
+		write.Animation = collectibleTestAnimation("delete-refuse.tgs")
+		write.Actor = "integration"
+		write.CommandID = write.CommandID + "-" + suffix
+		entry, err := gifts.CreateCatalogRevision(ctx, write)
+		if err != nil {
+			t.Fatalf("create catalog revision: %v", err)
+		}
+		t.Cleanup(func() {
+			cleanupCtx := context.Background()
+			_, _ = pool.Exec(cleanupCtx, `DELETE FROM star_gift_catalog WHERE gift_id = $1`, entry.Gift.ID)
+			_, _ = pool.Exec(cleanupCtx, `DELETE FROM star_gift_catalog_revisions WHERE gift_id = $1`, entry.Gift.ID)
+		})
+		return entry
+	}
+	seed := func(t *testing.T, entry domain.StarGiftCatalogEntry, convertStars, prepaidStars int64) (int64, int) {
+		t.Helper()
+		msgID := 100 + created
+		var savedID int64
+		if err := pool.QueryRow(ctx, `
+INSERT INTO peer_star_gifts (owner_peer_type, owner_peer_id, msg_id, gift_id, gift_date, catalog_revision_id,
+                             lifecycle_status, converted, convert_stars, prepaid_upgrade_stars)
+VALUES ('user', $1, $2, $3, 0, $4, 'active', false, $5, $6) RETURNING id`,
+			owner.ID, msgID, entry.Gift.ID, entry.Gift.RevisionID, convertStars, prepaidStars).Scan(&savedID); err != nil {
+			t.Fatalf("seed saved gift: %v", err)
+		}
+		t.Cleanup(func() {
+			_, _ = pool.Exec(context.Background(), `DELETE FROM peer_star_gifts WHERE id = $1`, savedID)
+		})
+		return savedID, msgID
+	}
+	assertRefused := func(t *testing.T, savedID int64, msgID int) {
+		t.Helper()
+		if _, err := lifecycle.DeleteStarGift(ctx, domain.StarGiftDeleteRequest{
+			UserID: owner.ID, Ref: domain.SavedStarGiftRef{Owner: ownerPeer, MsgID: msgID}, Date: now,
+		}); !errors.Is(err, domain.ErrStarGiftDeleteUnavailable) {
+			t.Fatalf("delete err = %v, want ErrStarGiftDeleteUnavailable", err)
+		}
+		var status string
+		if err := pool.QueryRow(ctx, `SELECT lifecycle_status FROM peer_star_gifts WHERE id = $1`, savedID).Scan(&status); err != nil {
+			t.Fatalf("read lifecycle status: %v", err)
+		}
+		if status != string(domain.StarGiftLifecycleActive) {
+			t.Fatalf("lifecycle status = %q, want %q", status, domain.StarGiftLifecycleActive)
+		}
+	}
+
+	t.Run("limited", func(t *testing.T) {
+		entry := createRevision(t, domain.StarGiftCatalogWrite{
+			Title: "Limited " + suffix, Stars: 50, Enabled: true, Limited: true,
+			AvailabilityTotal: 5, AvailabilityRemains: 5,
+		})
+		savedID, msgID := seed(t, entry, 0, 0)
+		assertRefused(t, savedID, msgID)
+	})
+	t.Run("auction", func(t *testing.T) {
+		entry := createRevision(t, domain.StarGiftCatalogWrite{
+			Title: "Auction " + suffix, Stars: 100, Enabled: true, Limited: true, Auction: true,
+			AvailabilityTotal: 5, AvailabilityRemains: 5, GiftsPerRound: 1,
+			AuctionStartDate: now - 10, AuctionRoundDuration: 60, AuctionSlug: "delete-auction-" + suffix,
+		})
+		savedID, msgID := seed(t, entry, 0, 0)
+		assertRefused(t, savedID, msgID)
+	})
+	t.Run("convertible", func(t *testing.T) {
+		entry := createRevision(t, domain.StarGiftCatalogWrite{
+			Title: "Convertible " + suffix, Stars: 50, ConvertStars: 20, Enabled: true,
+		})
+		savedID, msgID := seed(t, entry, 20, 0)
+		assertRefused(t, savedID, msgID)
+	})
+	t.Run("prepaid", func(t *testing.T) {
+		entry := createRevision(t, domain.StarGiftCatalogWrite{
+			Title: "Prepaid " + suffix, Stars: 50, Enabled: true,
+		})
+		savedID, msgID := seed(t, entry, 0, 100)
+		assertRefused(t, savedID, msgID)
+	})
+}
