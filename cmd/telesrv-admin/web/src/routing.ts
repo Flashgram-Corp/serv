@@ -1,4 +1,5 @@
 import type { TFunction } from "./i18n";
+import { stripBase } from "./lib/base";
 
 export type Navigate = (href: string) => void;
 
@@ -10,8 +11,8 @@ export type RouteState = {
 
 export function currentRoute(): RouteState {
   return {
-    href: `${window.location.pathname}${window.location.search}`,
-    path: window.location.pathname,
+    href: `${stripBase(window.location.pathname)}${window.location.search}`,
+    path: stripBase(window.location.pathname),
     search: new URLSearchParams(window.location.search)
   };
 }
