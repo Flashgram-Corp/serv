@@ -142,11 +142,21 @@ func newLogger() (*zap.Logger, error) {
 	), nil
 }
 
-func localStarGiftWithdrawalOption(publicBaseURL, publicLinkWebAddr string) (stargifts.Option, error) {
+func localStarGiftWithdrawalOption(publicBaseURL, publicLinkWebAddr string, logger *zap.Logger) (stargifts.Option, error) {
 	if strings.TrimSpace(publicLinkWebAddr) == "" {
 		return nil, nil
 	}
 	provider, err := stargifts.NewLocalWithdrawalProvider(publicBaseURL)
+	if errors.Is(err, stargifts.ErrLocalWithdrawalInsecureBaseURL) {
+		// The Docker LAN quick start uses http://<LAN IP>:2401 (gramsrv#135).
+		// Withdrawal is an optional feature there, so it must not stop the
+		// server; the bearer links simply stay unavailable until HTTPS is set.
+		if logger != nil {
+			logger.Warn("local star gift withdrawal disabled: public base URL is plain HTTP outside loopback",
+				zap.String("public_base_url", publicBaseURL))
+		}
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -1421,7 +1431,7 @@ func run(logger *zap.Logger) error {
 		}
 		starGiftWithdrawalOption = stargifts.WithWithdrawalProvider(starGiftWithdrawalProvider)
 	} else {
-		starGiftWithdrawalOption, err = localStarGiftWithdrawalOption(cfg.PublicBaseURL, cfg.PublicLinkWebAddr)
+		starGiftWithdrawalOption, err = localStarGiftWithdrawalOption(cfg.PublicBaseURL, cfg.PublicLinkWebAddr, logger)
 	}
 	if err != nil {
 		return fmt.Errorf("init local star gift withdrawal provider: %w", err)
