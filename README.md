@@ -72,7 +72,8 @@ deployment.
 - Accounts, database state, media, Redis state, and the RSA identity use Docker
   named volumes and survive container recreation and normal Compose shutdown.
 - Run without `-Build` to use the published images; `-Build` is only for local
-  source changes.
+  source changes. Restart a locally built stack with `-NoPull` (`--no-pull` for
+  `start-docker.sh`) so published images never replace it.
 
 If Windows blocks PowerShell scripts, allow them only for the current window
 and retry:
@@ -92,6 +93,10 @@ host's LAN address:
   -PublicWebBaseURL http://192.168.1.20:2401 `
   -AllowInsecureDevelopmentAuth
 ```
+
+On a plain-HTTP LAN address the server logs a warning and disables Star gift
+withdrawal links, which are bearer URLs and need HTTPS outside loopback;
+everything else works. Use an HTTPS public base URL when you need withdrawals.
 
 Stock Telegram clients require an endpoint and RSA-key patch. Use a compatible
 client from the [project website](https://telesrv.net). On `main`, the monolith
@@ -211,7 +216,8 @@ delivery remains durable through Egress.
 Telegram Desktop is the primary compatibility target. Android, iOS, and Web
 client paths are also actively covered. Some advanced features remain
 compatibility-first or experimental, but the implementation is open in this
-repository.
+repository. Deliberate differences from official Telegram are listed in
+[docs/telegram-differences.md](docs/telegram-differences.md).
 
 ## Clients
 
@@ -222,7 +228,9 @@ or build your own patched client.
 
 [OwpenGram](https://owpengram.org/) is a multi-server Telegram-style client
 with built-in support for `gramsrv`, private deployments, community nodes, and
-the official network from one client experience.
+the official network from one client experience. It can add a server from just
+`host:port`: the MTProto port serves `/owpengram/server-info` with the public
+RSA key, the DC and the Server identity set in the Admin panel.
 
 ## Build it with us
 

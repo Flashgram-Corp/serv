@@ -61,7 +61,8 @@ Set-Location gramsrv
 - 两个分支都提供客户端使用的匹配[公开测试公钥](deploy/docker/assets/test-server-rsa.pub)。
 - 账号、数据库、媒体、Redis 状态和 RSA 身份保存在 Docker named volumes 中，重建容器
   或正常执行 Compose 停止后仍会保留。
-- 不带 `-Build` 会直接使用发布镜像；`-Build` 仅用于验证本地源码修改。
+- 不带 `-Build` 会直接使用发布镜像；`-Build` 仅用于验证本地源码修改。重启本地构建的
+  镜像时加 `-NoPull`（`start-docker.sh` 为 `--no-pull`），避免被发布镜像覆盖。
 
 如果 Windows 提示禁止运行 PowerShell 脚本，只为当前 PowerShell 窗口临时放行后重试：
 
@@ -79,6 +80,9 @@ Set-ExecutionPolicy -Scope Process Bypass
   -PublicWebBaseURL http://192.168.1.20:2401 `
   -AllowInsecureDevelopmentAuth
 ```
+
+局域网明文 HTTP 地址下，服务会记录一条警告并关闭 Star 礼物提现链接（提现 URL 是 bearer
+链接，loopback 之外只允许 HTTPS），其余功能照常可用；需要提现时改用 HTTPS 的 public base URL。
 
 官方 Telegram 客户端需要修改服务器 endpoint 和 RSA key 才能连接；请从
 [项目官网](https://telesrv.net)获取兼容客户端。`main` 默认让包含 SFU/TURN 的单体服务
@@ -149,7 +153,8 @@ flowchart LR
 - 私聊通话信令、群通话、RTMP 直播和独立 SFU 媒体面。
 
 Telegram Desktop 是第一兼容目标，Android、iOS 和 Web 路径也在持续覆盖。
-部分高级功能仍以兼容性验证或实验为主，但对应实现都开放在本仓库中。
+部分高级功能仍以兼容性验证或实验为主，但对应实现都开放在本仓库中。与官方 Telegram
+有意不同的行为列在 [docs/telegram-differences.md](docs/telegram-differences.md)（英文）。
 
 ## 客户端
 
@@ -158,7 +163,9 @@ Telegram Desktop 是第一兼容目标，Android、iOS 和 Web 路径也在持�
 也可以自行构建只修改 endpoint 和 key 的客户端。
 
 [OwpenGram](https://owpengram.org/) 是一个支持多服务器的 Telegram 风格客户端，
-内置 `gramsrv` 支持，可以在官方网络、私有部署和社区节点之间切换。
+内置 `gramsrv` 支持，可以在官方网络、私有部署和社区节点之间切换。它只需 `host:port`
+即可添加服务器：MTProto 端口提供 `/owpengram/server-info`，包含公开 RSA 公钥、DC 以及
+在管理面板设置的 Server identity。
 
 ## 一起建设
 
