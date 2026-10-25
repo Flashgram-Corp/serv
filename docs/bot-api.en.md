@@ -135,7 +135,7 @@ Markers the gateway can return directly:
 
 ## Method summary
 
-Implemented (37 methods + 1 file route):
+Implemented (40 methods + 1 file route):
 
 | Group | Methods |
 |---|---|
@@ -144,7 +144,8 @@ Implemented (37 methods + 1 file route):
 | Text | `sendMessage`, `sendRichMessage` |
 | Media | `sendPhoto`, `sendAnimation`, `sendAudio`, `sendDocument`, `sendLivePhoto`, `sendSticker`, `sendVideo`, `sendVideoNote`, `sendVoice` |
 | Location | `sendContact`, `sendLocation`, `sendVenue` |
-| Edit/delete | `editMessageText`, `deleteMessage` |
+| Edit/delete | `editMessageText`, `editMessageCaption`, `editMessageReplyMarkup`, `deleteMessage` |
+| Chat actions | `sendChatAction` |
 | Ephemeral edit/delete | `editEphemeralMessageText`, `editEphemeralMessageMedia`, `editEphemeralMessageCaption`, `editEphemeralMessageReplyMarkup`, `deleteEphemeralMessage` |
 | Callback | `answerCallbackQuery` |
 | Files | `getFile`, `GET /file/bot<TOKEN>/<file_path>` |
@@ -378,7 +379,7 @@ file references, or HTTPS URLs (`FILE_ID_INVALID` otherwise).
 
 ### `editMessageText`
 
-The single edit method. It covers both ordinary and rich text edits, and both
+The main edit method. It covers both ordinary and rich text edits, and both
 chat messages and inline messages.
 
 | Parameter | Type | Notes |
@@ -395,9 +396,39 @@ For an `inline_message_id` the result is a boolean; for a chat message it is
 the updated `Message`. An edit that changes nothing returns
 `MESSAGE_NOT_MODIFIED`.
 
-There is no `editMessageCaption`, `editMessageMedia`, `editMessageReplyMarkup`,
-`editMessageLiveLocation`, or `stopMessageLiveLocation` — use
-`editMessageText` (or the ephemeral variants) instead.
+### `editMessageCaption`
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `chat_id` + `message_id` | | required; `inline_message_id` is not supported yet (`INLINE_MESSAGE_ID_UNSUPPORTED`) |
+| `caption` | string | up to 1024 characters; omitted or empty removes the caption |
+| `parse_mode`, `caption_entities` | | as in `sendPhoto` |
+| `reply_markup` | object | inline only; omitted keeps the keyboard, empty clears it |
+
+Only a photo or document message (photo, video, animation, audio, voice,
+file) has a caption; a text message returns `MESSAGE_HAS_NO_CAPTION`. Returns
+the updated `Message`. Works in private chats and in channels/supergroups.
+
+### `editMessageReplyMarkup`
+
+`chat_id` + `message_id` (no `inline_message_id` yet) and an optional inline
+`reply_markup`. Only the keyboard changes; an omitted `reply_markup` removes
+it. Returns the updated `Message`.
+
+There is no `editMessageMedia`, `editMessageLiveLocation`, or
+`stopMessageLiveLocation` — use `editMessageText` (or the ephemeral variants)
+instead.
+
+### `sendChatAction`
+
+| Parameter | Type | Notes |
+|---|---|---|
+| `chat_id` | integer | a private chat, or a channel/supergroup where the bot is a member |
+| `action` | string | `typing`, `upload_photo`, `record_video`, `upload_video`, `record_voice`, `upload_voice`, `upload_document`, `choose_sticker`, `find_location`, `record_video_note`, `upload_video_note` |
+| `message_thread_id` | integer | forum topic, optional |
+
+Returns `true`. The status is transient, like MTProto `messages.setTyping`:
+nothing is stored. `business_connection_id` is not supported.
 
 ### `deleteMessage`
 
@@ -623,11 +654,11 @@ units, unknown types are `ENTITY_TYPE_UNSUPPORTED`.
 Every other official method returns HTTP `404 METHOD_NOT_FOUND`. The most
 commonly reached ones:
 
-- editing: `editMessageCaption`, `editMessageMedia`,
-  `editMessageReplyMarkup`, `editMessageLiveLocation`,
-  `stopMessageLiveLocation`, `stopPoll`;
+- editing: `editMessageMedia`, `editMessageLiveLocation`,
+  `stopMessageLiveLocation`, `stopPoll`, and `inline_message_id` for
+  `editMessageCaption` / `editMessageReplyMarkup`;
 - media groups and the rest of the `send*` surface: `sendMediaGroup`,
-  `sendPoll`, `sendDice`, `sendGame`, `sendChatAction`;
+  `sendPoll`, `sendDice`, `sendGame`;
 - payments: `createInvoiceLink`, `sendInvoice`, `answerPreCheckoutQuery`,
   `answerShippingQuery`, `getStarTransactions`, `refundStarPayment`;
 - chat administration: `banChatMember`, `unbanChatMember`,

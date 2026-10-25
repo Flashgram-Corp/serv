@@ -76,6 +76,17 @@ type GatewayService interface {
 	BotAPIGetFile(ctx context.Context, botID int64, locationKey string, offset int64, limit int) (domain.FileChunk, bool, error)
 }
 
+// MessageActionGatewayService carries the Bot API methods that act on an
+// existing chat or message instead of sending a new one: sendChatAction,
+// editMessageCaption and editMessageReplyMarkup (gramsrv#137). Like the other
+// optional surfaces it is reached by type assertion; gateway_contract_test
+// pins the production Router to it.
+type MessageActionGatewayService interface {
+	BotAPISendChatAction(ctx context.Context, botID, chatID int64, action domain.BotAPIChatAction, topMessageID int) (bool, error)
+	BotAPIEditMessageCaption(ctx context.Context, botID, chatID int64, messageID int, caption string, entities []domain.MessageEntity, setReplyMarkup bool, replyMarkup *domain.MessageReplyMarkup) (domain.Message, error)
+	BotAPIEditMessageReplyMarkup(ctx context.Context, botID, chatID int64, messageID int, replyMarkup *domain.MessageReplyMarkup) (domain.Message, error)
+}
+
 type EphemeralGatewayService interface {
 	BotAPISendEphemeral(ctx context.Context, input domain.BotAPIEphemeralSendInput) (domain.EphemeralMessage, error)
 	BotAPIEditEphemeral(ctx context.Context, input domain.BotAPIEphemeralEditInput) (bool, error)
@@ -272,6 +283,12 @@ func (h *handler) handle(w http.ResponseWriter, r *http.Request) {
 		h.sendEphemeralLocation(w, r, botID, true)
 	case "editmessagetext":
 		h.editMessageText(w, r, botID)
+	case "editmessagecaption":
+		h.editMessageCaption(w, r, botID)
+	case "editmessagereplymarkup":
+		h.editMessageReplyMarkup(w, r, botID)
+	case "sendchataction":
+		h.sendChatAction(w, r, botID)
 	case "deletemessage":
 		h.deleteMessage(w, r, botID)
 	case "editephemeralmessagetext":
@@ -1795,6 +1812,10 @@ func apiErrorDescription(err error) string {
 		"MEDIA_INVALID",
 		"USER_BOT_REQUIRED",
 		"QUERY_ID_INVALID",
+		"MESSAGE_THREAD_ID_INVALID",
+		"MESSAGE_HAS_NO_CAPTION",
+		"MESSAGE_AUTHOR_REQUIRED",
+		"ACTION_INVALID",
 		"MESSAGE_ID_INVALID",
 		"MESSAGE_NOT_MODIFIED",
 		"BOT_COMMAND_INVALID",

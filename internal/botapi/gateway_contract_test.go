@@ -11,9 +11,10 @@ import (
 // would quietly turn the methods into 501 METHOD_NOT_FOUND answers. Pin the
 // contracts the production gateway must keep satisfying.
 var (
-	_ StarGiftGatewayService  = (*rpc.Router)(nil)
-	_ PremiumGatewayService   = (*rpc.Router)(nil)
-	_ EphemeralGatewayService = (*rpc.Router)(nil)
+	_ StarGiftGatewayService      = (*rpc.Router)(nil)
+	_ PremiumGatewayService       = (*rpc.Router)(nil)
+	_ EphemeralGatewayService     = (*rpc.Router)(nil)
+	_ MessageActionGatewayService = (*rpc.Router)(nil)
 )
 
 func TestProductionRouterExposesStarGiftSurface(t *testing.T) {

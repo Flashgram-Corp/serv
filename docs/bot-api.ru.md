@@ -134,7 +134,7 @@ credential, ровно как на официальном шлюзе.
 
 ## Сводка методов
 
-Реализовано (37 методов + 1 файловый маршрут):
+Реализовано (40 методов + 1 файловый маршрут):
 
 | Группа | Методы |
 |---|---|
@@ -143,7 +143,8 @@ credential, ровно как на официальном шлюзе.
 | Текст | `sendMessage`, `sendRichMessage` |
 | Медиа | `sendPhoto`, `sendAnimation`, `sendAudio`, `sendDocument`, `sendLivePhoto`, `sendSticker`, `sendVideo`, `sendVideoNote`, `sendVoice` |
 | Гео | `sendContact`, `sendLocation`, `sendVenue` |
-| Правка/удаление | `editMessageText`, `deleteMessage` |
+| Правка/удаление | `editMessageText`, `editMessageCaption`, `editMessageReplyMarkup`, `deleteMessage` |
+| Действия в чате | `sendChatAction` |
 | Правка/удаление ephemeral | `editEphemeralMessageText`, `editEphemeralMessageMedia`, `editEphemeralMessageCaption`, `editEphemeralMessageReplyMarkup`, `deleteEphemeralMessage` |
 | Callback | `answerCallbackQuery` |
 | Файлы | `getFile`, `GET /file/bot<TOKEN>/<file_path>` |
@@ -377,7 +378,7 @@ Ephemeral-сообщения (Bot API 10.2) видны только получа
 
 ### `editMessageText`
 
-Единственный метод правки. Покрывает и обычный текст, и rich-текст, и
+Основной метод правки. Покрывает и обычный текст, и rich-текст, и
 сообщения чата, и inline-сообщения.
 
 | Параметр | Тип | Комментарий |
@@ -394,9 +395,40 @@ Ephemeral-сообщения (Bot API 10.2) видны только получа
 обновлённый `Message`. Правка, ничего не меняющая, даёт
 `MESSAGE_NOT_MODIFIED`.
 
-Методов `editMessageCaption`, `editMessageMedia`, `editMessageReplyMarkup`,
-`editMessageLiveLocation` и `stopMessageLiveLocation` нет — используйте
-`editMessageText` (или ephemeral-варианты).
+### `editMessageCaption`
+
+| Параметр | Тип | Комментарий |
+|---|---|---|
+| `chat_id` + `message_id` | | обязательно; `inline_message_id` пока не поддерживается (`INLINE_MESSAGE_ID_UNSUPPORTED`) |
+| `caption` | строка | до 1024 символов; отсутствие или пустая строка убирает подпись |
+| `parse_mode`, `caption_entities` | | как в `sendPhoto` |
+| `reply_markup` | объект | только inline; отсутствие сохраняет клавиатуру, пустое значение снимает |
+
+Подпись есть только у сообщения с фото или документом (фото, видео, анимация,
+аудио, голосовое, файл); для текстового сообщения возвращается
+`MESSAGE_HAS_NO_CAPTION`. Возвращает обновлённый `Message`. Работает в личных
+чатах и в каналах/супергруппах.
+
+### `editMessageReplyMarkup`
+
+`chat_id` + `message_id` (без `inline_message_id`) и необязательный inline
+`reply_markup`. Меняется только клавиатура; отсутствие `reply_markup` её
+убирает. Возвращает обновлённый `Message`.
+
+Методов `editMessageMedia`, `editMessageLiveLocation` и
+`stopMessageLiveLocation` нет — используйте `editMessageText` (или
+ephemeral-варианты).
+
+### `sendChatAction`
+
+| Параметр | Тип | Комментарий |
+|---|---|---|
+| `chat_id` | целое | личный чат или канал/супергруппа, где бот состоит |
+| `action` | строка | `typing`, `upload_photo`, `record_video`, `upload_video`, `record_voice`, `upload_voice`, `upload_document`, `choose_sticker`, `find_location`, `record_video_note`, `upload_video_note` |
+| `message_thread_id` | целое | тема форума, необязательно |
+
+Возвращает `true`. Статус временный, как MTProto `messages.setTyping`: ничего
+не сохраняется. `business_connection_id` не поддерживается.
 
 ### `deleteMessage`
 
@@ -619,11 +651,11 @@ Message entities (для `entities` / `caption_entities`, а также entity
 Все остальные официальные методы возвращают HTTP `404 METHOD_NOT_FOUND`. Чаще
 всего до них доходят:
 
-- правка: `editMessageCaption`, `editMessageMedia`,
-  `editMessageReplyMarkup`, `editMessageLiveLocation`,
-  `stopMessageLiveLocation`, `stopPoll`;
+- правка: `editMessageMedia`, `editMessageLiveLocation`,
+  `stopMessageLiveLocation`, `stopPoll`, а также `inline_message_id` для
+  `editMessageCaption` / `editMessageReplyMarkup`;
 - медиагруппы и остальной `send*`-набор: `sendMediaGroup`, `sendPoll`,
-  `sendDice`, `sendGame`, `sendChatAction`;
+  `sendDice`, `sendGame`;
 - платежи: `createInvoiceLink`, `sendInvoice`, `answerPreCheckoutQuery`,
   `answerShippingQuery`, `getStarTransactions`, `refundStarPayment`;
 - администрирование чатов: `banChatMember`, `unbanChatMember`,
