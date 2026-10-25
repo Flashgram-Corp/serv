@@ -390,22 +390,12 @@ func (s *StarGiftLifecycleStore) SetStarGiftListing(ctx context.Context, req dom
 			if unique.ResaleTonOnly && req.Amount.Currency != domain.StarGiftCurrencyTON {
 				return domain.ErrStarGiftResaleUnavailable
 			}
-			var minimum int64
-			if req.Amount.Currency == domain.StarGiftCurrencyStars {
-				// The enforced floor is the cheapest live listing for this gift type,
-				// excluding troll listings priced far above the gift's base price.
-				// Computed from listings rather than the projected catalog column so
-				// a stale seed can never lock resale below a sane price.
-				if err := tx.QueryRow(ctx, `SELECT COALESCE((
-  SELECT MIN(l.amount) FROM star_gift_listings l JOIN unique_star_gifts u ON u.id=l.unique_gift_id
-  WHERE u.gift_id=$1 AND l.currency='XTR' AND NOT l.suspended
-    AND l.amount <= $2 * (SELECT r.stars FROM star_gift_catalog_revisions r JOIN star_gift_catalog c ON c.active_revision_id=r.id WHERE c.gift_id=$1)
- ),0)`, unique.GiftID, domain.StarGiftResaleFloorMultiple).Scan(&minimum); err != nil {
-					return err
-				}
-				if req.Amount.Amount < minimum {
-					return domain.ErrStarGiftResaleUnavailable
-				}
+			// A flat floor, not the cheapest current listing: a market-derived
+			// floor only ratchets upward and locks sellers out of pricing below
+			// whatever the first lister chose. resell_min_stars stays a display
+			// of the lowest price (see updateStarGiftResaleProjection).
+			if req.Amount.Currency == domain.StarGiftCurrencyStars && req.Amount.Amount < domain.MinStarGiftResaleStars {
+				return domain.ErrStarGiftResaleUnavailable
 			}
 			_, err = tx.Exec(ctx, `INSERT INTO star_gift_listings(unique_gift_id,seller_peer_type,seller_peer_id,currency,amount,listed_at,updated_at)
 VALUES($1,$2,$3,$4,$5,$6,$6)

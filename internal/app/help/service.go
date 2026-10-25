@@ -69,7 +69,13 @@ func walletAppConfigFragment(available bool) string {
 	return `,"wallet_available":` + strconv.FormatBool(available) + `,"wallet_gasless_daily_transfers":0`
 }
 
-const defaultAppConfigHash = 36 // 默认 app config 内容变更时必须递增，否则缓存端只会收到 notModified。
+// The Stars resale floor the server enforces on payments.updateStarGiftPrice.
+// Clients otherwise fall back to their own built-in default for the key.
+func starGiftResaleAppConfigFragment() string {
+	return `,"stars_stargift_resale_amount_min":` + strconv.FormatInt(domain.MinStarGiftResaleStars, 10)
+}
+
+const defaultAppConfigHash = 37 // 默认 app config 内容变更时必须递增，否则缓存端只会收到 notModified。
 
 // Service 提供客户端启动配置与国家区号目录。
 //
@@ -171,15 +177,16 @@ func defaultAppConfigJSONWithPremiumBot(mapboxToken, premiumBotUsername string, 
 	premiumFragment := `,"premium_bot_username":` + string(username)
 	androidInvoiceBilling := `,"premium_playmarket_direct_currency_list":` + compatandroid.DirectInvoiceCurrenciesJSON()
 	wallet := tonAppConfigFragment() + walletAppConfigFragment(walletAvailable)
+	resale := starGiftResaleAppConfigFragment()
 	if mapboxToken == "" {
-		return []byte(tdesktopDefaultAppConfigBase + tdesktopNoForwardsAppConfig + premiumFragment + androidInvoiceBilling + wallet + `}`)
+		return []byte(tdesktopDefaultAppConfigBase + tdesktopNoForwardsAppConfig + premiumFragment + androidInvoiceBilling + wallet + resale + `}`)
 	}
 	token, err := json.Marshal(mapboxToken)
 	if err != nil {
-		return []byte(tdesktopDefaultAppConfigBase + tdesktopNoForwardsAppConfig + premiumFragment + androidInvoiceBilling + wallet + `}`)
+		return []byte(tdesktopDefaultAppConfigBase + tdesktopNoForwardsAppConfig + premiumFragment + androidInvoiceBilling + wallet + resale + `}`)
 	}
 	tokenJSON := string(token)
-	return []byte(tdesktopDefaultAppConfigBase + tdesktopNoForwardsAppConfig + premiumFragment + androidInvoiceBilling + wallet + `,"tdesktop_config_map":{"maps":` + tokenJSON + `,"geo":` + tokenJSON + `,"bmaps":` + tokenJSON + `,"bgeo":` + tokenJSON + `}}`)
+	return []byte(tdesktopDefaultAppConfigBase + tdesktopNoForwardsAppConfig + premiumFragment + androidInvoiceBilling + wallet + resale + `,"tdesktop_config_map":{"maps":` + tokenJSON + `,"geo":` + tokenJSON + `,"bmaps":` + tokenJSON + `,"bgeo":` + tokenJSON + `}}`)
 }
 
 func defaultAppConfigHashFor(mapboxToken string) int {

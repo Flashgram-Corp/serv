@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	appConfigHash     = 21 // app config 内容变更时必须递增，否则缓存端只会收到 notModified。
+	appConfigHash     = 22 // app config 内容变更时必须递增，否则缓存端只会收到 notModified。
 	countriesListHash = 1
 	timezonesListHash = 1
 )
@@ -43,6 +43,8 @@ func readMarkAppConfig(mapboxToken string) *tg.JSONObject {
 		{Key: "stars_purchase_blocked", Value: &tg.JSONBool{Value: false}},
 		// stargifts_blocked=false：DrKLO 缺省 stargiftsBlocked=true 会隐藏 star gift 送礼网格。
 		{Key: "stargifts_blocked", Value: &tg.JSONBool{Value: false}},
+		// The Stars resale floor enforced on payments.updateStarGiftPrice.
+		{Key: "stars_stargift_resale_amount_min", Value: &tg.JSONNumber{Value: float64(domain.MinStarGiftResaleStars)}},
 		{Key: "giveaway_gifts_purchase_available", Value: &tg.JSONBool{Value: true}},
 		{Key: "giveaway_boosts_per_premium", Value: &tg.JSONNumber{Value: 4}},
 		{Key: "giveaway_countries_max", Value: &tg.JSONNumber{Value: 10}},

@@ -62,6 +62,22 @@ ledger recorded them.
 - `last_sale_on_fragment` and `fragment_listed_*` are never set: this ledger has
   no Fragment feed, so the correct value is "unknown" (left absent).
 
+## Resale price (`payments.updateStarGiftPrice`)
+
+- A Stars listing must be at least `domain.MinStarGiftResaleStars` (125 Stars).
+  `help.getAppConfig` advertises the same value as
+  `stars_stargift_resale_amount_min`, so the client's price field and the
+  server agree; a lower price is refused with `STARGIFT_INVALID`.
+- There is no market-derived minimum. A floor taken from the cheapest live
+  listing could only rise, and stopped every seller, the cheapest one included,
+  from pricing below it.
+- `resell_min_stars` and the `floor_price` of
+  `payments.getUniqueStarGiftValueInfo` are displays of the cheapest live,
+  unsuspended Stars listing of the gift type. Listings priced above
+  `domain.StarGiftResaleFloorMultiple` (10) times the active revision's base
+  price are ignored there, so one overpriced listing cannot move the display.
+- TON listings have no server-side minimum.
+
 ## `payments.getStarGiftWithdrawalUrl`
 
 Preconditions are checked in this order, because each later one would otherwise
@@ -215,6 +231,9 @@ init-data header injected.
   the same flags against PostgreSQL, including hosted rows.
 - `internal/store/postgres/star_gift_withdrawal_race_integration_test.go` —
   ten concurrent withdrawals collapse into one request row.
+- `internal/store/postgres/star_gift_lifecycle_integration_test.go`
+  (`TestStarGiftResaleFloorIgnoresTrollListingsPostgres`) — the flat resale
+  minimum, undercutting the cheapest listing, and the troll-proof display floor.
 
 The PostgreSQL ones run only when `TELESRV_TEST_POSTGRES_DSN` names a database
 whose name contains `test`.
