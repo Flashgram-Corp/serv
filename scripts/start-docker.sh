@@ -16,6 +16,9 @@ Initialization options (used only when deploy/docker/.env is absent):
 
 Other options:
   --build                 Build local images instead of pulling published images.
+  --no-pull               Never contact the registry: start the images already
+                          present locally (for example a stack built earlier with
+                          --build). With --build, base images are not refreshed.
   --help
 EOF
 }
@@ -34,6 +37,7 @@ admin_bind_ip=
 network_mode=
 allow_insecure=false
 build=false
+pull=true
 initialization_options=false
 
 while [[ $# -gt 0 ]]; do
@@ -46,6 +50,7 @@ while [[ $# -gt 0 ]]; do
     --bridge-network) network_mode=bridge; initialization_options=true; shift ;;
     --allow-insecure-development-auth) allow_insecure=true; initialization_options=true; shift ;;
     --build) build=true; shift ;;
+    --no-pull) pull=false; shift ;;
     --help|-h) usage; exit 0 ;;
     *) printf 'start-docker: unknown argument: %s\n' "$1" >&2; exit 1 ;;
   esac
@@ -81,8 +86,15 @@ if [[ "$configured_host_network" = false ]]; then compose+=(--file "$docker_dir/
 "${compose[@]}" version >/dev/null
 "${compose[@]}" config --quiet
 
-if [[ "$build" = true ]]; then "${compose[@]}" build --pull; else "${compose[@]}" pull; fi
-if ! "${compose[@]}" up --detach --no-build --wait --wait-timeout 600; then
+up_args=(up --detach --no-build --wait --wait-timeout 600)
+if [[ "$build" = true && "$pull" = true ]]; then "${compose[@]}" build --pull
+elif [[ "$build" = true ]]; then "${compose[@]}" build
+elif [[ "$pull" = true ]]; then "${compose[@]}" pull
+fi
+# Without a pull, a missing image must fail here instead of being fetched
+# silently and replacing a locally built tag (gramsrv#136).
+[[ "$pull" = true ]] || up_args+=(--pull never)
+if ! "${compose[@]}" "${up_args[@]}"; then
   "${compose[@]}" logs --no-color --tail 160 || true
   exit 1
 fi

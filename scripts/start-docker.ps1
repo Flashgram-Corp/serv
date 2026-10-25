@@ -22,7 +22,13 @@ param(
     [switch]$AllowInsecureDevelopmentAuth,
 
     [Parameter()]
-    [switch]$Build
+    [switch]$Build,
+
+    # Never contact the registry: start the images already present locally
+    # (for example a stack built earlier with -Build). With -Build, base images
+    # are not refreshed.
+    [Parameter()]
+    [switch]$NoPull
 )
 
 $ErrorActionPreference = "Stop"
@@ -45,7 +51,7 @@ if (-not (Test-Path -LiteralPath $envPath -PathType Leaf)) {
     if ($AllowInsecureDevelopmentAuth) { $generatorArguments.AllowInsecureDevelopmentAuth = $true }
     & $generatorPath @generatorArguments
 }
-elseif ($PSBoundParameters.Keys | Where-Object { $_ -notin @("Build") }) {
+elseif ($PSBoundParameters.Keys | Where-Object { $_ -notin @("Build", "NoPull") }) {
     Write-Warning "deploy/docker/.env already exists; initialization options were ignored to preserve credentials and deployment identity."
 }
 
@@ -70,8 +76,14 @@ function Invoke-Compose {
 }
 
 Invoke-Compose -Arguments @("config", "--quiet")
-if ($Build) { Invoke-Compose -Arguments @("build", "--pull") } else { Invoke-Compose -Arguments @("pull") }
-try { Invoke-Compose -Arguments @("up", "--detach", "--no-build", "--wait", "--wait-timeout", "600") }
+$upArguments = @("up", "--detach", "--no-build", "--wait", "--wait-timeout", "600")
+if ($Build -and -not $NoPull) { Invoke-Compose -Arguments @("build", "--pull") }
+elseif ($Build) { Invoke-Compose -Arguments @("build") }
+elseif (-not $NoPull) { Invoke-Compose -Arguments @("pull") }
+# Without a pull, a missing image must fail here instead of being fetched
+# silently and replacing a locally built tag (gramsrv#136).
+if ($NoPull) { $upArguments += @("--pull", "never") }
+try { Invoke-Compose -Arguments $upArguments }
 catch { & docker @composeBase logs --no-color --tail 160; throw }
 
 Invoke-Compose -Arguments @("ps", "--all")
