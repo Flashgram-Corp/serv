@@ -260,6 +260,10 @@ type Options struct {
 	// WebSocketAllowedOrigins 是允许浏览器发起 WebSocket upgrade 的页面 origin。
 	// 空列表表示只接受无 Origin 的非浏览器客户端；"*" 表示允许所有来源（仅调试）。
 	WebSocketAllowedOrigins []string
+	// SamePortHTTP 接管同端口 HTTP 侧非 /apiws* 的请求（例如公开的 server-info 描述，
+	// 见 internal/serverinfo）。edge 只做路由，不解释内容；nil 时这些路径一律 404。
+	// 仅在 WebSocket 开启（同端口分流生效）时可达。
+	SamePortHTTP http.Handler
 	// ReadTimeout 单次读取超时。默认 5m。
 	ReadTimeout time.Duration
 	// HandshakeIdleTimeout 是连接「建立 session 前」（握手 + 首个加密消息之前）的读超时，
@@ -501,6 +505,7 @@ type Server struct {
 	obfuscated               bool
 	websocket                bool
 	websocketOrigins         []string
+	samePortHTTP             http.Handler
 	readTimeout              time.Duration
 	handshakeTimeout         time.Duration
 	handshakeMaxDur          time.Duration
@@ -559,6 +564,7 @@ func New(opts Options) *Server {
 		obfuscated:               opts.ObfuscatedTCP,
 		websocket:                opts.WebSocket,
 		websocketOrigins:         append([]string(nil), opts.WebSocketAllowedOrigins...),
+		samePortHTTP:             opts.SamePortHTTP,
 		readTimeout:              opts.ReadTimeout,
 		handshakeTimeout:         opts.HandshakeIdleTimeout,
 		handshakeMaxDur:          opts.HandshakeMaxDuration,
@@ -741,7 +747,7 @@ func (s *Server) serveMixed(ctx context.Context, ln net.Listener) error {
 	wsLn := newTransportPacketMessageListener(wsRawLn)
 
 	httpServer := &http.Server{
-		Handler:           websocketRouteHandler(wsHandler, s.websocketOrigins),
+		Handler:           websocketRouteHandler(wsHandler, s.websocketOrigins, s.samePortHTTP),
 		ReadHeaderTimeout: minDuration(10*time.Second, s.handshakeTimeout),
 		BaseContext: func(net.Listener) context.Context {
 			return ctx

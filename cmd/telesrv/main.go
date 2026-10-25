@@ -89,6 +89,7 @@ import (
 	"telesrv/internal/rpc"
 	"telesrv/internal/seed/catalog"
 	freezeseed "telesrv/internal/seed/freeze"
+	"telesrv/internal/serverinfo"
 	"telesrv/internal/sfu"
 	storepkg "telesrv/internal/store"
 	"telesrv/internal/store/memory"
@@ -2299,6 +2300,7 @@ func run(logger *zap.Logger) error {
 		ObfuscatedTCP:                  true,
 		WebSocket:                      cfg.WebSocketEnable,
 		WebSocketAllowedOrigins:        cfg.WebSocketAllowedOrigins,
+		SamePortHTTP:                   serverinfo.Handler(cfg.DC, rsaKey, identityStore),
 		MaxConnections:                 cfg.MTProtoMaxConnections,
 		MaxConnectionsPerIP:            cfg.MTProtoMaxConnectionsPerIP,
 		MaxConcurrentHandshakes:        cfg.MTProtoMaxConcurrentHandshakes,

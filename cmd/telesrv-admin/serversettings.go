@@ -96,9 +96,9 @@ func (s *server) handleServerIdentityAPI(w http.ResponseWriter, r *http.Request)
 }
 
 // handleServerIconAPI serves the icon's raw bytes for the panel's own
-// preview. There is no public server-icon route in telesrv -- the icon is
-// purely a panel concept (unlike owpengram's /owpengram/server-info), so the
-// bytes never leave the admin session.
+// preview. The same icon is also public: the server publishes it next to the
+// RSA key on the MTProto port at /owpengram/server-icon (internal/serverinfo),
+// so nothing uploaded here may be private.
 func (s *server) handleServerIconAPI(w http.ResponseWriter, r *http.Request) {
 	data, ext, ok := s.identity.Icon()
 	if !ok {
