@@ -1222,9 +1222,10 @@ const (
 	// MaxPinnedStarGifts matches stargifts_pinned_to_top_limit advertised to
 	// official clients. Pin requests are complete replacement vectors.
 	MaxPinnedStarGifts = 6
-	// MinStarGiftResaleStars is the floor of a Stars resale price. It matches
-	// the client's stars_stargift_resale_amount_min default and is deliberately
-	// flat: a floor derived from the cheapest listing only ever ratchets up.
+	// MinStarGiftResaleStars is the floor of a Stars resale price. It equals the
+	// clients' built-in stars_stargift_resale_amount_min default and is
+	// advertised under that key in help.getAppConfig. It is deliberately flat: a
+	// floor derived from the cheapest listing only ever ratchets up.
 	MinStarGiftResaleStars int64 = 125
 )
 
