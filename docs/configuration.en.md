@@ -826,6 +826,34 @@ Balances/history come from this server's local nanoton ledger. Chain sending,
 gasless, wallet backup/export and TON Connect sessions remain unimplemented;
 this setting does not make them available.
 
+`TELESRV_WALLET_INTERNAL_TRANSFERS=false` is a separate, disabled-by-default
+extension for transfers between users of this deployment's internal Gram ledger.
+Enabling it requires `TELESRV_WALLET_STATE_DIR` and compatible custom clients.
+It is not a TON broadcast or gasless relay. The help service advertises
+`wallet_internal_gram_transfer_version=1` and
+`wallet_transfer_requires_password=true` only when both capabilities are enabled;
+an explicit operator app-config row remains authoritative. The RPC does not
+override wallet flags based on the client's layer.
+
+Each transfer requires a fresh SRP confirmation of the account's 2FA password.
+The client obtains `account.getTmpPassword` (60 seconds recommended), then sends
+a version 1 JSON envelope in `wallet.sendTransfer.data_normal`: integer fields
+`version`, `recipient_user_id`, `random_id`, `amount_nanoton`, optional `comment`,
+and a `tmp_password` string containing the standard Base64 encoding of the
+32-byte grant. The recipient and random ID must match the outer RPC. The server
+accepts grants issued within the last 120 seconds, bound to the same account,
+authorization and password version, and atomically consumes the grant with the
+debit and chat receipt. Accounts without 2FA must configure it first. A changed
+command cannot reuse a consumed grant; an identical retry returns the original
+receipt even if the grant has since expired. Plain legacy JSON, signed/unsigned
+TON messages and `data_gasless` are rejected. Wallet address lookups are read-only;
+recipients open/create their own wallets. Missed transient balance pushes recover
+through `wallet.getState`; ledger and chat delivery remain durable.
+
+This extension changes the project's supported capability set. Upstream adoption
+requires an explicit maintainer decision; a deployment opt-in does not constitute
+that decision.
+
 `TELESRV_DONATIONS_ENABLED=false` disables provisioning of the donations seed
 and all chain watchers. Existing deployments must explicitly set it to true
 and enable/configure the desired chain to continue that feature after upgrade.
