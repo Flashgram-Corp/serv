@@ -263,6 +263,38 @@ func TestWalletAddressLookupDoesNotProvisionOtherUser(t *testing.T) {
 
 type walletAddressUsers struct{ walletTransferUsers }
 
+type walletTransferContacts struct {
+	ContactsService
+	owner, blocked int64
+	err            error
+}
+
+func (c walletTransferContacts) IsBlocked(_ context.Context, owner, blocked int64) (bool, error) {
+	return owner == c.owner && blocked == c.blocked, c.err
+}
+
+func TestWalletSendTransferRespectsRecipientBlock(t *testing.T) {
+	for _, lookupErr := range []error{nil, errors.New("block lookup failed")} {
+		gifts := &walletTransferGifts{}
+		r := newWalletTransferRouter(t, gifts)
+		r.deps.Contacts = walletTransferContacts{owner: 7, blocked: 42, err: lookupErr}
+		body, _ := json.Marshal(map[string]any{"version": 1, "recipient_user_id": 7, "random_id": 103, "amount_nanoton": 1, "tmp_password": base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32))})
+		_, err := dispatchWallet230Err(t, r, &tg.WalletSendTransferRequest{UserID: &tg.InputUser{UserID: 7}, RandomID: 103, DataNormal: body})
+		if err == nil || gifts.calls != 0 {
+			t.Fatalf("blocked/error lookup reached ledger: calls=%d err=%v", gifts.calls, err)
+		}
+		if lookupErr == nil && !strings.Contains(err.Error(), "USER_IS_BLOCKED") {
+			t.Fatalf("blocked error = %v", err)
+		}
+	}
+}
+
+func TestWalletTransferConflictError(t *testing.T) {
+	if err := walletTransferErr(domain.ErrStarGiftIdempotencyConflict); !strings.Contains(err.Error(), "RANDOM_ID_DUPLICATE") {
+		t.Fatal(err)
+	}
+}
+
 func (walletAddressUsers) ByID(_ context.Context, _ int64, userID int64) (domain.User, bool, error) {
 	return domain.User{ID: userID, AccessHash: 1}, true, nil
 }

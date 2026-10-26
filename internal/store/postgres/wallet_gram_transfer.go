@@ -17,12 +17,13 @@ import (
 
 // WalletTransferStore owns internal wallet debits and their chat receipts.
 type WalletTransferStore struct {
-	db       sqlcgen.DBTX
-	messages *MessageStore
+	db            sqlcgen.DBTX
+	messages      *MessageStore
+	startingGrant int64
 }
 
-func NewWalletTransferStore(db sqlcgen.DBTX, messages *MessageStore) *WalletTransferStore {
-	return &WalletTransferStore{db: db, messages: messages}
+func NewWalletTransferStore(db sqlcgen.DBTX, messages *MessageStore, startingGrant int64) *WalletTransferStore {
+	return &WalletTransferStore{db: db, messages: messages, startingGrant: startingGrant}
 }
 
 func walletTransferFingerprint(req domain.WalletGramTransferRequest) [32]byte {
@@ -30,6 +31,9 @@ func walletTransferFingerprint(req domain.WalletGramTransferRequest) [32]byte {
 	req.Date = 0
 	req.OriginSessionID = 0
 	req.Title = ""
+	// Linked addresses are presentation data, not transfer intent. A recipient
+	// may replace their wallet between a committed transfer and its retry.
+	req.PeerAddress = ""
 	data, _ := json.Marshal(req)
 	return sha256.Sum256(data)
 }
@@ -76,6 +80,10 @@ func consumeWalletTransferGrant(ctx context.Context, tx pgx.Tx, req domain.Walle
 }
 
 func (s *WalletTransferStore) TransferWalletGram(ctx context.Context, req domain.WalletGramTransferRequest) (domain.WalletGramTransferResult, error) {
+	// Also enforce this at the debit boundary, not only during config loading.
+	if s.startingGrant != 0 {
+		return domain.WalletGramTransferResult{}, domain.ErrWalletTransferStartingGrant
+	}
 	fromUserID, toUserID, amountNanoton := req.FromUserID, req.ToUserID, req.AmountNanoton
 	if fromUserID <= 0 || toUserID <= 0 || fromUserID == toUserID || amountNanoton <= 0 || req.Date <= 0 || strings.TrimSpace(req.CommandKey) == "" || req.AuthorizationHash == ([32]byte{}) || req.OriginAuthKeyID == ([8]byte{}) || s.messages == nil {
 		return domain.WalletGramTransferResult{}, domain.ErrStarGiftOwnerInvalid
@@ -109,7 +117,7 @@ SELECT balance_after, transaction_id, from_user_id, to_user_id, amount_nanoton,r
 				Scan(&stored, &storedTxn, &storedFrom, &storedTo, &storedAmount, &storedHash, &messageID, &transferDate)
 			if err == nil {
 				if storedFrom != fromUserID || storedTo != toUserID || storedAmount != amountNanoton || !bytes.Equal(storedHash, fingerprint[:]) {
-					return domain.ErrStarGiftOwnerInvalid
+					return domain.ErrStarGiftIdempotencyConflict
 				}
 				// The replay answers with the first attempt's result, so the
 				// caller sees the same balance and the same ledger row.
@@ -132,6 +140,15 @@ SELECT balance_after, transaction_id, from_user_id, to_user_id, amount_nanoton,r
 			if !errors.Is(err, pgx.ErrNoRows) {
 				return err
 			}
+		}
+		// Recheck inside the transaction so non-RPC callers cannot bypass the
+		// recipient's block list. Refusal leaves the approval token untouched.
+		blocked, err := NewContactStore(tx).IsBlocked(ctx, toUserID, fromUserID)
+		if err != nil {
+			return err
+		}
+		if blocked {
+			return domain.ErrWalletTransferRecipientBlocked
 		}
 		if err := consumeWalletTransferGrant(ctx, tx, req); err != nil {
 			return err
@@ -167,16 +184,16 @@ RETURNING balance_nanoton`, toUserID, amountNanoton).Scan(&result.Balance); err 
 			return err
 		}
 		comment := strings.TrimSpace(req.Comment)
-		if err := tx.QueryRow(ctx, `
-INSERT INTO ton_transactions(user_id,amount_nanoton,reason,peer_type,peer_id,date,comment)
-VALUES($1,$2,$3,'user',$4,$5,$6) RETURNING id`,
-			toUserID, amountNanoton, string(req.Reason), fromUserID, req.Date, comment).Scan(&result.TransactionID); err != nil {
-			return err
-		}
 		if _, err := tx.Exec(ctx, `
 INSERT INTO ton_transactions(user_id,amount_nanoton,reason,peer_type,peer_id,date,comment)
 VALUES($1,$2,$3,'user',$4,$5,$6)`,
-			fromUserID, -amountNanoton, string(req.Reason), toUserID, req.Date, comment); err != nil {
+			toUserID, amountNanoton, string(req.Reason), fromUserID, req.Date, comment); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `
+INSERT INTO ton_transactions(user_id,amount_nanoton,reason,peer_type,peer_id,date,comment)
+VALUES($1,$2,$3,'user',$4,$5,$6) RETURNING id`,
+			fromUserID, -amountNanoton, string(req.Reason), toUserID, req.Date, comment).Scan(&result.TransactionID); err != nil {
 			return err
 		}
 		// The service message joins this transaction, so the chat and the

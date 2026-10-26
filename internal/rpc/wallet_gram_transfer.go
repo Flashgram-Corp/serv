@@ -41,6 +41,13 @@ func (r *Router) onWalletSendTransfer(ctx context.Context, req *tg.WalletSendTra
 	if !found || recipient.ID <= 0 || recipient.ID == uid || recipient.Bot || recipient.Deleted {
 		return nil, userIDInvalidErr()
 	}
+	blocked, err := r.peerBlocksUser(ctx, uid, recipient.ID)
+	if err != nil {
+		return nil, err
+	}
+	if blocked {
+		return nil, userIsBlockedErr()
+	}
 	transfers, ok := r.deps.Wallet.(WalletTransferService)
 	if !ok {
 		return nil, walletTransferErr(walletapp.ErrTransferDisabled)
@@ -85,6 +92,10 @@ func (r *Router) onWalletSendTransfer(ctx context.Context, req *tg.WalletSendTra
 	// the transfer as a message in the conversation, exactly as it will see it
 	// in the chat with the receiver.
 	updates := r.starGiftSendUpdates(ctx, uid, transfer.Send)
+	// Replays preserve the address saved with the original receipt.
+	if media := transfer.Send.SenderMessage.Media; media != nil && media.ServiceAction != nil && media.ServiceAction.GramTransfer != nil {
+		peerAddress = media.ServiceAction.GramTransfer.PeerAddress
+	}
 	hash := sha256.Sum256(data)
 	receipt := &tg.UpdateSentWalletTransaction{MsgHash: base64.StdEncoding.EncodeToString(hash[:])}
 	receipt.SetTransaction(gramTransferTransactionFromLedger(domain.TonTransaction{ID: transfer.TransactionID, Amount: -intent.AmountNanoton, Date: transfer.Date, Peer: domain.Peer{Type: domain.PeerTypeUser, ID: recipient.ID}, Comment: intent.Comment}, map[int64]string{recipient.ID: peerAddress}))
@@ -110,8 +121,10 @@ func (r *Router) onWalletSendTransfer(ctx context.Context, req *tg.WalletSendTra
 
 func walletTransferErr(err error) error {
 	switch {
-	case errors.Is(err, walletapp.ErrTransferDisabled):
+	case errors.Is(err, walletapp.ErrTransferDisabled), errors.Is(err, domain.ErrWalletTransferStartingGrant):
 		return tgerr.New(400, "WALLET_TRANSFER_DISABLED")
+	case errors.Is(err, domain.ErrWalletTransferRecipientBlocked):
+		return userIsBlockedErr()
 	case errors.Is(err, walletapp.ErrInvalidTransferBody):
 		return tgerr.New(400, "WALLET_TRANSFER_AUTH_REQUIRED")
 	case errors.Is(err, domain.ErrTmpPasswordInvalid):

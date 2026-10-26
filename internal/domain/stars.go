@@ -351,6 +351,9 @@ func DecodeStarsCursor(s string) (int64, bool) {
 	return id, true
 }
 
+var ErrWalletTransferStartingGrant = errors.New("wallet transfers require a zero starting grant")
+var ErrWalletTransferRecipientBlocked = errors.New("wallet transfer recipient blocked sender")
+
 // WalletGramTransferRequest describes one gram transfer between two accounts.
 //
 // The request is the whole movement: who sends, who receives, how much, and
@@ -394,7 +397,7 @@ type WalletGramTransferResult struct {
 	Duplicate bool
 	// Balance is the receiver's balance after the transfer.
 	Balance int64
-	// TransactionID is the receiver's ledger row. The service message and the
+	// TransactionID is the sender's ledger row. The service message and the
 	// history entry are the same movement, and the client correlates them by
 	// this id.
 	TransactionID int64

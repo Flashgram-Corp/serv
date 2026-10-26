@@ -25,7 +25,7 @@ type authorizedWalletTransferFixture struct {
 }
 
 func newAuthorizedWalletTransferStore(t *testing.T, pool *pgxpool.Pool, messages *MessageStore) *authorizedWalletTransferFixture {
-	return &authorizedWalletTransferFixture{t: t, pool: pool, store: NewWalletTransferStore(pool, messages), proofs: make(map[string]domain.WalletGramTransferRequest)}
+	return &authorizedWalletTransferFixture{t: t, pool: pool, store: NewWalletTransferStore(pool, messages, 0), proofs: make(map[string]domain.WalletGramTransferRequest)}
 }
 
 func (f *authorizedWalletTransferFixture) prepare(ctx context.Context, req domain.WalletGramTransferRequest) (domain.WalletGramTransferRequest, error) {

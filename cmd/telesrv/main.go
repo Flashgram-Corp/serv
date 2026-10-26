@@ -1871,7 +1871,7 @@ func run(logger *zap.Logger) error {
 			walletapp.WithBalanceSource(walletapp.TONLedgerBalanceSource(starGiftLifecycleStore.TonBalance)),
 			walletapp.WithTransactionSource(walletapp.TONLedgerTransactionSource(starGiftLifecycleStore.TonTransactions)),
 			walletapp.WithKeyCipher(walletKeys),
-			walletapp.WithInternalTransfers(cfg.WalletInternalTransfers, postgres.NewWalletTransferStore(pool, messageStore)))
+			walletapp.WithInternalTransfers(cfg.WalletInternalTransfers, postgres.NewWalletTransferStore(pool, messageStore, cfg.StarGiftTONStartingGrant)))
 		logger.Info("应用内 TON 钱包已启用",
 			zap.String("state_dir", cfg.WalletStateDir),
 			zap.Bool("ton_provider", walletProvider != nil))

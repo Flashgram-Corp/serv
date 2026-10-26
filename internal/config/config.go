@@ -1799,6 +1799,9 @@ func validateTelegramLoginConfig(cfg Config) error {
 }
 
 func validateWalletConfig(cfg Config) error {
+	if cfg.WalletInternalTransfers && cfg.StarGiftTONStartingGrant != 0 {
+		return fmt.Errorf("TELESRV_WALLET_INTERNAL_TRANSFERS requires TELESRV_STARGIFT_TON_STARTING_GRANT=0; per-account starting grants cannot be pooled through transfers")
+	}
 	// 钱包目录留空即禁用，此时不要求密钥文件存在；启用时必须给出私钥主密钥
 	// 路径，否则钱包状态会被写入明文风险无法接受的形态。
 	if cfg.WalletStateDir == "" {
