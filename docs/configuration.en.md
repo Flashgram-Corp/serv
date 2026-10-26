@@ -831,7 +831,7 @@ extension for transfers between users of this deployment's internal Gram ledger.
 Enabling it requires `TELESRV_WALLET_STATE_DIR` and compatible custom clients.
 It is not a TON broadcast or gasless relay. The help service advertises
 `wallet_internal_gram_transfer_version=1` and
-`wallet_transfer_requires_password=true` only when both capabilities are enabled;
+`wallet_transfer_requires_password` as a true boolean only when both capabilities are enabled;
 an explicit operator app-config row remains authoritative. The RPC does not
 override wallet flags based on the client's layer.
 
