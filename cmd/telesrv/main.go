@@ -1870,7 +1870,8 @@ func run(logger *zap.Logger) error {
 		walletService = walletapp.NewService(walletStore, walletProvider, cfg.AdvertiseIP,
 			walletapp.WithBalanceSource(walletapp.TONLedgerBalanceSource(starGiftLifecycleStore.TonBalance)),
 			walletapp.WithTransactionSource(walletapp.TONLedgerTransactionSource(starGiftLifecycleStore.TonTransactions)),
-			walletapp.WithKeyCipher(walletKeys))
+			walletapp.WithKeyCipher(walletKeys),
+			walletapp.WithInternalTransfers(cfg.WalletInternalTransfers, postgres.NewWalletTransferStore(pool, messageStore, cfg.StarGiftTONStartingGrant)))
 		logger.Info("应用内 TON 钱包已启用",
 			zap.String("state_dir", cfg.WalletStateDir),
 			zap.Bool("ton_provider", walletProvider != nil))
@@ -1935,6 +1936,7 @@ func run(logger *zap.Logger) error {
 			// operator turns it off, and that is exactly when a client must be told
 			// the wallet is unavailable rather than shown an entry that cannot work.
 			help.WithWalletAvailable(walletService != nil),
+			help.WithInternalWalletTransfers(cfg.WalletInternalTransfers),
 			help.WithAccountFreezeProvider(adminService)),
 		AppUpdates:                   appUpdateResolver,
 		AccountFreeze:                userProjectionFacts,
