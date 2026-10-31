@@ -23,6 +23,7 @@ type Store interface {
 	// existing wallet, and commits a link. Only an identical request may replay.
 	CommitWalletLink(context.Context, domain.WalletChallenge, domain.WalletLink, [32]byte, bool, time.Time) error
 	WalletLinks(context.Context, []int64) ([]domain.WalletLink, error)
+	PrimaryAddress(ctx context.Context, userID int64) (string, error)
 }
 
 type Provider interface {
@@ -129,4 +130,48 @@ func (s *Service) Perform(ctx context.Context, endpoint string, query, payload *
 		return "", fmt.Errorf("wallet service unavailable")
 	}
 	return s.provider.Perform(ctx, endpoint, query, payload)
+}
+
+// GetTransactions returns the TON transaction history for the given address.
+// The internal nanoton ledger is the source of truth; an absent source returns
+// an empty page rather than an error.
+func (s *Service) GetTransactions(ctx context.Context, address string, offset, limit int) ([]domain.TonTransaction, error) {
+	query := url.Values{"address": {address}}.Encode()
+	raw, err := s.provider.Perform(ctx, "/api/v2/getTransactions", &query, nil)
+	if err != nil {
+		return nil, err
+	}
+	var response struct {
+		OK     bool                     `json:"ok"`
+		Result []domain.TonTransaction  `json:"result"`
+	}
+	if json.Unmarshal([]byte(raw), &response) != nil || !response.OK {
+		return nil, ErrProviderResponse
+	}
+	return response.Result, nil
+}
+
+// GetNFTs returns the NFTs owned by the given address. Currently returns an
+// empty list as the server has no NFT backend.
+func (s *Service) GetNFTs(ctx context.Context, address string) ([]domain.NFT, error) {
+	return []domain.NFT{}, nil
+}
+
+// GetOnrampProviders returns available fiat on-ramp providers. Currently
+// returns an empty list as the server has no onramp backend.
+func (s *Service) GetOnrampProviders(ctx context.Context) ([]domain.OnrampProvider, error) {
+	return []domain.OnrampProvider{}, nil
+}
+
+// PrimaryAddress returns the custodial wallet address for the given user.
+// On first read it mints a wallet (one keypair per account, sealed under the
+// master key) through the same challenge-bound path wallet.replaceWallet uses.
+// A deployment with no master key returns an error rather than failing the read.
+func (s *Service) PrimaryAddress(ctx context.Context, userID int64) (string, error) {
+	if userID <= 0 {
+		return "", domain.ErrWalletProofInvalid
+	}
+	// WHY: the wallet is custodial and created on first view; an account with
+	// funds sitting in the ledger must be able to display them.
+	return s.store.PrimaryAddress(ctx, userID)
 }

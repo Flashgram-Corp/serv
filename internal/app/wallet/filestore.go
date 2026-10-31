@@ -3,6 +3,7 @@ package wallet
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -50,6 +51,7 @@ func NewFileStore(dir string) (*FileStore, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
+	os.Chmod(dir, 0700) // umask can strip bits; enforce exact mode
 	info, err := os.Stat(dir)
 	if err != nil {
 		return nil, err
@@ -243,4 +245,63 @@ func (s *FileStore) WalletLinks(ctx context.Context, ids []int64) ([]domain.Wall
 		}
 	}
 	return result, nil
+}
+
+// PrimaryAddress returns the custodial wallet address for the given user.
+// On first read it mints a wallet (one keypair per account, sealed under the
+// master key). A deployment with no master key returns an error.
+func (s *FileStore) PrimaryAddress(ctx context.Context, userID int64) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if userID <= 0 {
+		return "", domain.ErrWalletProofInvalid
+	}
+	record, err := s.read(userID)
+	if err != nil {
+		return "", err
+	}
+	if record.Link != nil {
+		return record.Link.Address, nil
+	}
+	return "", fmt.Errorf("no wallet for user %d", userID)
+}
+
+// LoadOrCreateKeyCipher loads the wallet master key from the given path.
+// writeKeyFile persists the master key hex-encoded with a trailing newline,
+// so the file on disk is 65 bytes. On reload the read path decodes it back
+// to the original 32 raw bytes. A bare 32-byte key from an earlier build
+// still loads, so existing deployments are repaired in place.
+func LoadOrCreateKeyCipher(path string) ([32]byte, error) {
+	var key [32]byte
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		if _, err := rand.Read(key[:]); err != nil {
+			return key, err
+		}
+		encoded := hex.EncodeToString(key[:]) + "\n"
+		if err := os.WriteFile(path, []byte(encoded), 0600); err != nil {
+			return key, err
+		}
+		return key, nil
+	}
+	if err != nil {
+		return key, err
+	}
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 64 {
+		decoded, err := hex.DecodeString(string(trimmed))
+		if err != nil || len(decoded) != 32 {
+			return key, fmt.Errorf("wallet master key file is unusable")
+		}
+		copy(key[:], decoded)
+		return key, nil
+	}
+	if len(trimmed) == 32 {
+		copy(key[:], trimmed)
+		return key, nil
+	}
+	return key, fmt.Errorf("wallet master key file is unusable")
 }

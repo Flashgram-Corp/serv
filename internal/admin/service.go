@@ -36,6 +36,8 @@ const (
 	ActionGrantStars              = "account.grant_stars"
 	ActionGrantStarsAll           = "account.grant_stars_all"
 	ActionDebitStars              = "account.debit_stars"
+	ActionGrantGrams              = "account.grant_grams"
+	ActionDebitGrams              = "account.debit_grams"
 	ActionSetVerified             = "account.set_verified"
 	ActionSetUserFlags            = "account.set_flags"
 	ActionSetSupport              = "account.set_support"
@@ -272,6 +274,13 @@ type StarsService interface {
 	GrantStarsAll(ctx context.Context, amount int64, title, desc string) (int64, error)
 }
 
+// GramsService 抽象 Grams 账本的贷记/借记。
+type GramsService interface {
+	Credit(ctx context.Context, userID, amount int64, reason string, peer domain.Peer, title, desc string) (domain.GramBalance, error)
+	Debit(ctx context.Context, userID, amount int64, reason string, peer domain.Peer, title, desc string) (domain.GramBalance, error)
+	GetBalance(ctx context.Context, userID int64) (domain.GramBalance, error)
+}
+
 type BroadcastService interface {
 	Preview(ctx context.Context, message string, mode domain.BroadcastTargetMode, selectedUserIDs []int64) (int64, error)
 	Create(ctx context.Context, message string, mode domain.BroadcastTargetMode, selectedUserIDs []int64, createdBy string) (domain.Broadcast, error)
@@ -497,6 +506,7 @@ type Dependencies struct {
 	Photos                  AvatarResolver
 	Donations               DonationsService
 	Stars                   StarsService
+	Grams                   GramsService
 	Premium                 PremiumService
 	StarsNotifier           StarsNotifier
 	UserNotifier            UserNotifier
@@ -541,6 +551,7 @@ type Service struct {
 	photos                  AvatarResolver
 	donations               DonationsService
 	stars                   StarsService
+	grams                   GramsService
 	premium                 PremiumService
 	starsNotifier           StarsNotifier
 	userNotifier            UserNotifier

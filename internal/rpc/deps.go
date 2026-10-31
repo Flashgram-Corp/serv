@@ -1199,9 +1199,23 @@ type Deps struct {
 	Gifts                        GiftsService
 	Passkey                      PasskeyService
 	Themes                       ThemeService
+	PaidMessages                 PaidMessagesService
+	Wallet                       WalletService
 	// GeoIP 把会话记录的 IP 解析为 account.getAuthorizations 展示用的国家/地区
 	// 文案。为 nil(未配置地理后端)时列表继续回传占位文案,与启用前一致。
 	GeoIP geoip.Resolver
+}
+
+// PaidMessagesService 抽象 paid-message exceptions 与 revenue ledger 存储。
+type PaidMessagesService interface {
+	HasPaidMessagesException(ctx context.Context, channelID, granterUserID, userID int64) (bool, error)
+}
+
+// WalletService 抽象 TON wallet 操作。
+type WalletService interface {
+	PrimaryAddress(ctx context.Context, userID int64) (string, error)
+	GetTransactions(ctx context.Context, address, offset string, limit int) ([]domain.TonTransaction, error)
+	GetNFTs(ctx context.Context, address string) ([]domain.NFT, error)
 }
 
 // ThemeService 抽象自定义云主题(app/themes):创建/更新/查询主题 + 维护每用户已安装列表。

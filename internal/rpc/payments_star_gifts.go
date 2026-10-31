@@ -708,6 +708,9 @@ func (r *Router) onPaymentsSendStarsForm(ctx context.Context, req *tg.PaymentsSe
 			return nil, starGiftInvalidErr()
 		}
 	}
+	if err := r.validateStarGiftCommentAllowed(ctx, userID, peer, giftMessage); err != nil {
+		return nil, err
+	}
 	now := int(r.clock.Now().Unix())
 	purchaseReq := domain.StarGiftPurchaseRequest{BuyerUserID: userID, BuyerPremium: buyerPremium, To: peer,
 		GiftID: gift.ID, RevisionID: gift.RevisionID, IncludeUpgrade: inv.IncludeUpgrade, HideName: inv.HideName,

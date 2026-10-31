@@ -22,6 +22,11 @@ type StarsBalance struct {
 // self top-up as a friend gift (or vice versa) when submitting the form.
 type StarsPurchaseKind string
 
+// TonUSDRate is the shared TON/USD rate used by both appConfig and
+// payments.getCurrencyRates so a client told one number cannot then be told
+// another.
+const TonUSDRate = 0.6
+
 const (
 	StarsPurchaseTopup    StarsPurchaseKind = "topup"
 	StarsPurchaseGift     StarsPurchaseKind = "gift"
@@ -282,6 +287,20 @@ type TonTransactionPage struct {
 	Transactions []TonTransaction
 	NextOffset   string
 	Users        []User
+}
+
+// NFT represents a non-fungible token owned by an address.
+type NFT struct {
+	ID       int64
+	Address  string
+	Metadata string
+}
+
+// OnrampProvider represents a fiat-to-crypto on-ramp provider.
+type OnrampProvider struct {
+	ID          string
+	Name        string
+	Description string
 }
 
 // Stars 账本边界常量。

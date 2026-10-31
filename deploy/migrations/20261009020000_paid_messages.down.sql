@@ -1,0 +1,1 @@
+-- Down migration for 20261009020000_paid_messages (no-op placeholder).

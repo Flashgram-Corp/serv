@@ -39,6 +39,7 @@ const (
 	botFatherCmdSetLogin       = "setlogin"
 	botFatherCmdLoginInfo      = "logininfo"
 	botFatherCmdResetLogin     = "resetloginsecret"
+	botFatherCmdSetMenuButton  = "setmenubutton"
 	botFatherCmdDone           = "done"
 
 	botFatherStepName     = "name"
@@ -81,6 +82,7 @@ Bot Settings
 /setinlinefeedback - change inline feedback settings
 /setjoingroups - can your bot be added to groups?
 /setprivacy - toggle privacy mode in groups
+/setmenubutton - set the bot's menu button to open a Mini App
 
 Telegram Login
 /setlogin - configure Telegram Login for a bot
@@ -247,6 +249,7 @@ var botFatherGlobalCommands = map[string]bool{
 	botFatherCmdSetInlineFB: true, botFatherCmdSetJoinGroups: true, botFatherCmdSetPrivacy: true,
 	botFatherCmdSetUserPic: true, botFatherCmdDeleteBot: true,
 	botFatherCmdSetLogin: true, botFatherCmdLoginInfo: true, botFatherCmdResetLogin: true,
+	botFatherCmdSetMenuButton: true,
 }
 
 func (s *Service) handleBotFather(ctx context.Context, userID int64, text string) botReply {
@@ -309,6 +312,7 @@ var pickerPrompts = map[string]string{
 	botFatherCmdSetLogin:       "Choose a bot to configure Telegram Login for. Send the bot's username:",
 	botFatherCmdLoginInfo:      "Choose a bot whose Telegram Login configuration you want to inspect:",
 	botFatherCmdResetLogin:     "Choose a bot whose OIDC Client Secret you want to rotate:",
+	botFatherCmdSetMenuButton:  "Choose a bot to set the menu button for. Send the bot's username:",
 }
 
 // startBotPicker 列出 owner 的 bot 并进入 choose step（所有需先选 bot 的命令共用）。
@@ -408,7 +412,8 @@ func (s *Service) handleBotFatherCommand(ctx context.Context, userID int64, cmd 
 		botFatherCmdSetName, botFatherCmdSetDescription, botFatherCmdSetAbout,
 		botFatherCmdSetCommands, botFatherCmdSetInline, botFatherCmdSetInlineGeo,
 		botFatherCmdSetJoinGroups, botFatherCmdSetPrivacy,
-		botFatherCmdSetLogin, botFatherCmdLoginInfo, botFatherCmdResetLogin:
+		botFatherCmdSetLogin, botFatherCmdLoginInfo, botFatherCmdResetLogin,
+		botFatherCmdSetMenuButton:
 		return s.startBotPicker(ctx, userID, cmd)
 	case "confirm":
 		return s.handleBotFatherConfirmCommand(ctx, userID)
@@ -444,6 +449,8 @@ func valuePrompt(cmd, username string) string {
 		return fmt.Sprintf("Send 'enable' to turn ON group privacy for @%s (it will only receive commands and replies), or 'disable' to let it receive all group messages.", username)
 	case botFatherCmdSetLogin:
 		return telegramLoginConfigurationPrompt(username)
+	case botFatherCmdSetMenuButton:
+		return fmt.Sprintf("OK. Send me the text and HTTPS URL for the menu button of @%s, separated by a space (for example: `Open App https://example.com/app`). Send /empty to remove the button.", username)
 	default:
 		return "Send the new value, or /cancel."
 	}
@@ -595,7 +602,7 @@ func (s *Service) handleChooseBot(ctx context.Context, state domain.BotChatState
 		return tokenReply(head, credentials.Secret, "\n\n"+prompt)
 	case botFatherCmdSetName, botFatherCmdSetDescription, botFatherCmdSetAbout,
 		botFatherCmdSetCommands, botFatherCmdSetInline, botFatherCmdSetInlineGeo,
-		botFatherCmdSetJoinGroups, botFatherCmdSetPrivacy:
+		botFatherCmdSetJoinGroups, botFatherCmdSetPrivacy, botFatherCmdSetMenuButton:
 		// 选中 bot 后进入收值 step，把目标 bot 暂存进 Draft。
 		state.Step = botFatherStepValue
 		if state.Draft == nil {
@@ -734,6 +741,8 @@ func (s *Service) handleSetValue(ctx context.Context, state domain.BotChatState,
 		reply, err = s.applyToggle(ctx, botID, text, false)
 	case botFatherCmdSetLogin:
 		return s.handleTelegramLoginConfigurationInput(ctx, state, botID, username, text)
+	case botFatherCmdSetMenuButton:
+		reply, err = s.applySetMenuButton(ctx, botID, text)
 	default:
 		s.clearState(ctx, state.UserID)
 		return internalReply()
@@ -787,6 +796,41 @@ func (s *Service) applySetInline(ctx context.Context, botID int64, text string) 
 		return botReply{Text: "Success! Inline mode disabled. /help"}, nil
 	}
 	return botReply{Text: "Success! Inline settings updated. /help"}, nil
+}
+
+// applySetMenuButton 解析 "Text https://url"（/empty 移除）并设置 bot 的
+// menu button（WebView 类型，点击打开 Mini App）。
+func (s *Service) applySetMenuButton(ctx context.Context, botID int64, text string) (botReply, error) {
+	raw := strings.TrimSpace(text)
+	if raw == "/empty" {
+		if _, err := s.SetBotMenuButton(ctx, botID, domain.BotMenuButton{Type: domain.BotMenuButtonDefault}); err != nil {
+			s.log.Error("botfather: clear menu button", zap.Int64("bot_user_id", botID), zap.Error(err))
+			return botReply{}, err
+		}
+		return botReply{Text: "Success! Menu button removed. /help"}, nil
+	}
+	label, url, ok := strings.Cut(raw, " ")
+	if !ok {
+		return botReply{Text: "Invalid format. Send: `Button text https://example.com/app`. Try again or /cancel."}, domain.ErrBotMenuButtonInvalid
+	}
+	label = strings.TrimSpace(label)
+	if label == "" {
+		return botReply{Text: "Button text cannot be empty. Try again or /cancel."}, domain.ErrBotMenuButtonInvalid
+	}
+	if _, err := s.SetBotMenuButton(ctx, botID, domain.BotMenuButton{
+		Type: domain.BotMenuButtonWebView,
+		Text: label,
+		URL:  strings.TrimSpace(url),
+	}); err != nil {
+		switch {
+		case errors.Is(err, domain.ErrBotMenuButtonInvalid):
+			return botReply{Text: fmt.Sprintf("Invalid menu button. Text must be 1-%d characters and the URL must be an HTTPS link (max %d characters). Try again or /cancel.", domain.MaxBotMenuButtonTextLen, domain.MaxBotMenuButtonURLLen)}, err
+		default:
+			s.log.Error("botfather: set menu button", zap.Int64("bot_user_id", botID), zap.Error(err))
+			return botReply{}, err
+		}
+	}
+	return botReply{Text: "Success! Menu button updated. /help"}, nil
 }
 
 func (s *Service) applySetInlineGeo(ctx context.Context, botID int64, text string) (botReply, error) {

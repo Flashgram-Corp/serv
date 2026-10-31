@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"telesrv/internal/domain"
 	"testing"
@@ -35,6 +36,9 @@ func signChallenge(t *testing.T, c domain.WalletChallenge, seed byte) ([]byte, [
 }
 
 func TestFileWalletLifecycle(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("wallet directory permissions are not enforced on Windows")
+	}
 	ctx := context.Background()
 	dir := filepath.Join(t.TempDir(), "wallet")
 	store, err := NewFileStore(dir)
@@ -118,7 +122,11 @@ func TestFileWalletLifecycle(t *testing.T) {
 }
 
 func TestFileWalletConcurrentClaims(t *testing.T) {
-	store, err := NewFileStore(filepath.Join(t.TempDir(), "wallet"))
+	if runtime.GOOS == "windows" {
+		t.Skip("wallet directory permissions are not enforced on Windows")
+	}
+	dir := filepath.Join(t.TempDir(), "wallet")
+	store, err := NewFileStore(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,6 +169,9 @@ func TestFileWalletConcurrentClaims(t *testing.T) {
 }
 
 func TestFileWalletLockAndCorruption(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("wallet directory permissions are not enforced on Windows")
+	}
 	dir := filepath.Join(t.TempDir(), "wallet")
 	store, err := NewFileStore(dir)
 	if err != nil {

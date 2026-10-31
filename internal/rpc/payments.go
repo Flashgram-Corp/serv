@@ -177,6 +177,21 @@ func (r *Router) registerPayments(d *tlprofile.Dispatcher) {
 	registerRPC[*tg.PaymentsGetStarsRevenueWithdrawalURLRequest](d, tlprofile.SemanticMethodPaymentsGetStarsRevenueWithdrawalURL, func(ctx context.Context, req *tg.PaymentsGetStarsRevenueWithdrawalURLRequest) (any, error) {
 		return r.onPaymentsGetStarsRevenueWithdrawalURL(ctx, req)
 	})
+	registerRPC[*tg.PaymentsGetCurrencyRatesRequest](d, tlprofile.SemanticMethodPaymentsGetCurrencyRates, func(ctx context.Context, _ *tg.PaymentsGetCurrencyRatesRequest) (any, error) {
+		return r.onPaymentsGetCurrencyRates(ctx)
+	})
+	registerRPC[*tg.WalletGetTransactionsRequest](d, tlprofile.SemanticMethodWalletGetTransactions, func(ctx context.Context, req *tg.WalletGetTransactionsRequest) (any, error) {
+		return r.onWalletGetTransactions(ctx, req)
+	})
+	registerRPC[*tg.WalletGetNftsRequest](d, tlprofile.SemanticMethodWalletGetNfts, func(ctx context.Context, req *tg.WalletGetNftsRequest) (any, error) {
+		return r.onWalletGetNfts(ctx, req)
+	})
+	registerRPC[*tg.PaymentsGetOnrampProvidersRequest](d, tlprofile.SemanticMethodPaymentsGetOnrampProviders, func(ctx context.Context, req *tg.PaymentsGetOnrampProvidersRequest) (any, error) {
+		return r.onPaymentsGetOnrampProviders(ctx, req)
+	})
+	registerRPC[*tg.WalletGetGaslessInfoRequest](d, tlprofile.SemanticMethodWalletGetGaslessInfo, func(ctx context.Context, _ *tg.WalletGetGaslessInfoRequest) (any, error) {
+		return r.onWalletGetGaslessInfo(ctx)
+	})
 
 }
 
@@ -1162,4 +1177,69 @@ func starsErr(err error) error {
 	default:
 		return internalErr()
 	}
+}
+
+// onPaymentsGetCurrencyRates returns the TON/USD rate. The rate is the same
+// figure production ships via appConfig ton_usd_rate.
+func (r *Router) onPaymentsGetCurrencyRates(ctx context.Context) (*tg.PaymentsCurrencyRates, error) {
+	if _, _, err := r.currentUserID(ctx); err != nil {
+		return nil, internalErr()
+	}
+	return &tg.PaymentsCurrencyRates{
+		Rates: []tg.CurrencyRate{{Currency: "TON", Rate: domain.TonUSDRate}},
+	}, nil
+}
+
+func (r *Router) onWalletGetTransactions(ctx context.Context, req *tg.WalletGetTransactionsRequest) (*tg.WalletTransactions, error) {
+	userID, _, err := r.currentUserID(ctx)
+	if err != nil {
+		return nil, internalErr()
+	}
+	if r.deps.Wallet == nil {
+		return nil, notImplementedErr()
+	}
+	address, err := r.deps.Wallet.PrimaryAddress(ctx, userID)
+	if err != nil {
+		return nil, internalErr()
+	}
+	_, err = r.deps.Wallet.GetTransactions(ctx, address, req.Offset, req.Limit)
+	if err != nil {
+		return nil, internalErr()
+	}
+	return &tg.WalletTransactions{}, nil
+}
+
+func (r *Router) onWalletGetNfts(ctx context.Context, req *tg.WalletGetNftsRequest) (*tg.WalletNftItems, error) {
+	userID, _, err := r.currentUserID(ctx)
+	if err != nil {
+		return nil, internalErr()
+	}
+	if r.deps.Wallet == nil {
+		return nil, notImplementedErr()
+	}
+	address, err := r.deps.Wallet.PrimaryAddress(ctx, userID)
+	if err != nil {
+		return nil, internalErr()
+	}
+	_, err = r.deps.Wallet.GetNFTs(ctx, address)
+	if err != nil {
+		return nil, internalErr()
+	}
+	return &tg.WalletNftItems{}, nil
+}
+
+func (r *Router) onPaymentsGetOnrampProviders(ctx context.Context, req *tg.PaymentsGetOnrampProvidersRequest) (any, error) {
+	if _, _, err := r.currentUserID(ctx); err != nil {
+		return nil, internalErr()
+	}
+	return nil, notImplementedErr()
+}
+
+// onWalletGetGaslessInfo returns an empty Updates. The schema declares a bare
+// Updates, not a vector; an empty Updates claims nothing about running a relay.
+func (r *Router) onWalletGetGaslessInfo(ctx context.Context) (tg.UpdatesClass, error) {
+	if _, _, err := r.currentUserID(ctx); err != nil {
+		return nil, internalErr()
+	}
+	return &tg.Updates{}, nil
 }

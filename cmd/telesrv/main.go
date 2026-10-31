@@ -1313,6 +1313,7 @@ func run(logger *zap.Logger) error {
 	secretChatService := secretchatapp.NewService(secretChatStore, encryptedQueueStore)
 	starsStore := postgres.NewStarsStore(pool)
 	starsPurchaseStore := postgres.NewStarsPurchaseStore(pool, messageStore, channelStore)
+	paidMessagesStore := postgres.NewPaidMessagesStore(pool)
 	starsService := stars.NewService(starsStore,
 		stars.WithStartingGrant(cfg.StarsStartingGrant),
 		stars.WithPurchaseStore(starsPurchaseStore))
@@ -1749,7 +1750,7 @@ func run(logger *zap.Logger) error {
 	// 会话地理归属(account.getAuthorizations 的 country/region)。协议层没有
 	// help.requestIpAddress 的对等实现,不配 endpoint 时 resolver 为 nil,列表继续回传
 	// "Unknown" 占位文案——这是未启用时的预期路径,不该让服务起不来。
-	geoIPResolver, err := geoip.New(geoip.Config{
+geoIPResolver, err := geoip.New(geoip.Config{
 		Endpoints:          cfg.GeoIPEndpoints,
 		Timeout:            cfg.GeoIPTimeout,
 		Concurrency:        cfg.GeoIPConcurrency,
@@ -1766,13 +1767,16 @@ func run(logger *zap.Logger) error {
 	}
 	if geoIPResolver != nil {
 		defer func() { _ = geoIPResolver.Close() }()
-		// failover 链是有序的,启动时打出来,排查"为什么这条会话显示 Unknown"时能直接
-		// 看出当时主力是哪个。
 		logger.Info("会话地理归属已启用",
 			zap.Strings("backends", geoip.EndpointNames(cfg.GeoIPEndpoints)))
 	} else {
 		logger.Info("会话地理归属未启用：account.getAuthorizations 继续回传 Unknown 占位文案")
 	}
+
+	// Initialize wallet service from database.
+	walletStore := postgres.NewGramsStore(pool)
+	walletService := rpc.NewWalletService(*walletStore)
+
 	router := rpc.New(rpc.Config{
 		DC:                       cfg.DC,
 		DefaultCountryCode:       cfg.DefaultCountryCode,
@@ -1869,6 +1873,7 @@ func run(logger *zap.Logger) error {
 		Gifts:                        giftsService,
 		Passkey:                      passkeyService,
 		Themes:                       themeService,
+		PaidMessages:                 paidMessagesStore,
 		GeoIP:                        geoIPResolver,
 		GroupCalls:                   groupCallsService,
 		LiveStreams:                  liveStreamDep(liveStreamService),
@@ -1879,6 +1884,7 @@ func run(logger *zap.Logger) error {
 		Metrics:                      metricRegistry,
 		Inline:                       inlineRegistryStore,
 		Limiter:                      rateLimiter,
+		Wallet:                       walletService,
 	}, logger.Named("rpc"), clock.System)
 	readModelListener := postgres.NewReadModelChangeListener(cfg.PostgresDSN, postgres.ReadModelCacheSet{
 		ReadModelVersions:   readModelVersionStore,

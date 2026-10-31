@@ -1,0 +1,3 @@
+-- This migration was recorded in schema_migrations by a previous build but
+-- the file was missing from deploy/migrations. It is a no-op placeholder so
+-- the migration system can reconcile the recorded version.
